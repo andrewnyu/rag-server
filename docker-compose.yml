@@ -1,0 +1,14 @@
+version: '3'
+
+services:
+  rag-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1 
