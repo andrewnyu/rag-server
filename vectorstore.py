@@ -8,6 +8,7 @@ import PyPDF2
 class VectorStore:
     def __init__(self):
         self.documents = []
+        self.document_sources = []  # Track document sources
         self.embeddings = None
         self.index = None
         self.model = SentenceTransformer('all-MiniLM-L6-v2')  # Fast and effective model
@@ -21,28 +22,32 @@ class VectorStore:
         ]
         
         for doc in default_docs:
-            self.add_document(doc)
+            self.add_document(doc, source="Default Example")
         
         print(f"Added {len(default_docs)} default documents to the vector store.")
 
-    def add_document(self, doc_path_or_text: str):
+    def add_document(self, doc_path_or_text: str, source=None):
         """Preprocess and add document to the vector store.
         
         Args:
             doc_path_or_text: Either a file path to a document or the document text itself
+            source: Source of the document (e.g., filename or description)
         """
         # Check if the input is a file path
         if os.path.isfile(doc_path_or_text):
             # Extract text based on file type
             if doc_path_or_text.lower().endswith('.pdf'):
                 doc_text = self._extract_text_from_pdf(doc_path_or_text)
+                source = source or os.path.basename(doc_path_or_text)
             else:
                 # For text files or other formats
                 with open(doc_path_or_text, 'r', encoding='utf-8', errors='ignore') as f:
                     doc_text = f.read()
+                source = source or os.path.basename(doc_path_or_text)
         else:
             # Assume it's already text
             doc_text = doc_path_or_text
+            source = source or "Direct Text Input"
             
         # Skip empty documents
         if not doc_text or doc_text.strip() == "":
@@ -53,9 +58,14 @@ class VectorStore:
         chunks = self._chunk_document(doc_text)
         
         # Add each chunk as a separate document
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
             if chunk.strip():
                 self.documents.append(chunk)
+                # For chunks, add source with chunk number
+                if len(chunks) > 1:
+                    self.document_sources.append(f"{source} (Chunk {i+1}/{len(chunks)})")
+                else:
+                    self.document_sources.append(source)
         
         # Rebuild the index with the new documents
         self._build_index()
@@ -158,3 +168,41 @@ class VectorStore:
             return ["No relevant information found for your query. Please try a different question."]
             
         return results
+        
+    def get_document_list(self):
+        """Get a list of unique documents in the vector store."""
+        if not self.documents or not self.document_sources:
+            return []
+            
+        # Create a list of unique documents by source
+        unique_sources = set()
+        document_list = []
+        
+        for i, source in enumerate(self.document_sources):
+            # Extract the base source name (without chunk info)
+            base_source = source.split(" (Chunk")[0]
+            
+            if base_source not in unique_sources:
+                unique_sources.add(base_source)
+                
+                # Get document type
+                doc_type = "TEXT"
+                if "." in base_source:
+                    extension = base_source.split(".")[-1].upper()
+                    if extension:
+                        doc_type = extension
+                
+                # Get document size (approximate based on first chunk)
+                doc_size = len(self.documents[i]) / 1024  # Size in KB
+                
+                # Count chunks for this document
+                chunk_count = sum(1 for s in self.document_sources if s.startswith(base_source))
+                
+                document_list.append({
+                    "filename": base_source,
+                    "type": doc_type,
+                    "size": f"{doc_size:.1f} KB",
+                    "chunks": chunk_count
+                })
+                
+        return document_list

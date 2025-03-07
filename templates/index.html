@@ -126,11 +126,23 @@
             background: #F5F5F5;
             border-radius: 6px;
             display: flex;
+            flex-direction: column;
+        }
+        .document-header {
+            display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 5px;
         }
         .document-info {
             flex-grow: 1;
+        }
+        .document-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #757575;
+            margin-top: 5px;
         }
         .document-type {
             background: #E0E0E0;
@@ -138,6 +150,14 @@
             border-radius: 4px;
             font-size: 12px;
             margin-left: 10px;
+        }
+        .document-chunks {
+            background: #E3F2FD;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+            color: #1976D2;
         }
         .tab-container {
             display: flex;
@@ -240,13 +260,23 @@
                 if (result.documents && result.documents.length > 0) {
                     let html = '';
                     for (const doc of result.documents) {
+                        // Format last modified time if available
+                        const lastModified = doc.last_modified ? 
+                            `<span>Modified: ${doc.last_modified}</span>` : '';
+                        
                         html += `
                             <div class="document-item">
-                                <div class="document-info">
-                                    <strong>${doc.filename}</strong>
-                                    <span class="document-type">${doc.type}</span>
+                                <div class="document-header">
+                                    <div class="document-info">
+                                        <strong>${doc.filename}</strong>
+                                        <span class="document-type">${doc.type}</span>
+                                        ${doc.chunks > 1 ? `<span class="document-chunks">${doc.chunks} chunks</span>` : ''}
+                                    </div>
+                                    <div>${doc.size}</div>
                                 </div>
-                                <div>${doc.size}</div>
+                                <div class="document-meta">
+                                    ${lastModified}
+                                </div>
                             </div>
                         `;
                     }

@@ -38,11 +38,8 @@ async def upload_file(files: list[UploadFile]):
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Track source of document
-        source = file.filename
-        
-        # Add document to vector store
-        vector_store.add_document(file_path)
+        # Add document to vector store with source
+        vector_store.add_document(file_path, source=file.filename)
         uploaded_files.append(file.filename)
 
     upload_time = time.time() - start_time
@@ -56,19 +53,20 @@ async def upload_file(files: list[UploadFile]):
 # Get list of documents
 @app.get("/documents/")
 async def get_documents():
-    # Get list of all documents in the uploads directory
-    documents = []
-    if os.path.exists("rag-server/uploads"):
-        for filename in os.listdir("rag-server/uploads"):
-            file_path = os.path.join("rag-server/uploads", filename)
-            if os.path.isfile(file_path):
-                documents.append({
-                    "filename": filename,
-                    "size": f"{os.path.getsize(file_path) / 1024:.1f} KB",
-                    "type": filename.split('.')[-1].upper() if '.' in filename else "Unknown"
-                })
+    # Get document list from vector store
+    document_list = vector_store.get_document_list()
     
-    return JSONResponse(content={"documents": documents})
+    # Add file system information for uploaded documents
+    for doc in document_list:
+        if doc["filename"] != "Default Example":
+            file_path = os.path.join("rag-server/uploads", doc["filename"])
+            if os.path.exists(file_path):
+                # Update with actual file size
+                doc["size"] = f"{os.path.getsize(file_path) / 1024:.1f} KB"
+                # Add last modified time
+                doc["last_modified"] = time.ctime(os.path.getmtime(file_path))
+    
+    return JSONResponse(content={"documents": document_list})
 
 # Ask a question
 @app.get("/ask/")
@@ -84,7 +82,12 @@ async def ask_question(query: str = Query(..., title="User query")):
     # Generate answer using the LLM
     llm_start = time.time()
     answer = llm.generate(query, docs)
-    answer = str(answer).split("Question:")[1] #manually remove the context from the answer
+
+    try:
+        answer = str(answer).split("Question:")[1] #manually remove the context from the answer
+    except IndexError:
+        pass
+    
     llm_time = time.time() - llm_start
     
     # Calculate total processing time
