@@ -93,10 +93,24 @@ async def ask_question(query: str = Query(..., title="User query")):
     # Calculate total processing time
     total_time = time.time() - start_time
     
+    # Extract just the content for display in the UI
+    context_for_display = []
+    for doc in docs:
+        # Extract source and content from the formatted string
+        if isinstance(doc, str):
+            parts = doc.split("\n\n", 1)
+            if len(parts) > 1:
+                source = parts[0].replace("[Document ", "").split("]")[0]
+                content = parts[1]
+                context_for_display.append({
+                    "source": source,
+                    "content": content[:300] + "..." if len(content) > 300 else content
+                })
+    
     # Return comprehensive response with timing data
     return JSONResponse(content={
         "answer": answer,
-        "context": docs,
+        "context": context_for_display,
         "timing": {
             "retrieval_time": f"{retrieval_time:.2f} seconds",
             "llm_time": f"{llm_time:.2f} seconds",
