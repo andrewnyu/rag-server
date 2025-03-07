@@ -139,6 +139,17 @@ If you prefer to run the application without Docker:
 3. View timing metrics for each query
 4. Toggle the context visibility to see what information was used
 
+### Default Documents
+
+The system can automatically load documents from a specified folder on startup:
+
+1. Create a folder for your default documents (default is `./default_docs`)
+2. Place your text, PDF, Markdown, or CSV files in this folder
+3. Set the `DEFAULT_DOCS_FOLDER` in your `.env` file to point to this folder
+4. Restart the server to load the documents
+
+This is useful for including reference materials that should always be available to the RAG system.
+
 ## Architecture
 
 - **FastAPI**: Web framework for the backend

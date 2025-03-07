@@ -3,6 +3,11 @@ import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 import PyPDF2
+import glob
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Initialize storage for documents and their embeddings
 class VectorStore:
@@ -17,12 +22,27 @@ class VectorStore:
         self._add_default_documents()
         
     def _add_default_documents(self):
-        """Add default documents to the vector store."""
-        default_docs = [
-        ]
+        """Add default documents to the vector store from the folder specified in .env."""
+        # Get default docs folder from environment variable or use default
+        default_docs_folder = os.getenv('DEFAULT_DOCS_FOLDER', './default_docs')
         
-        for doc in default_docs:
-            self.add_document(doc, source="Default Example")
+        # Create the folder if it doesn't exist
+        os.makedirs(default_docs_folder, exist_ok=True)
+        
+        # Find all files in the default docs folder
+        default_docs = []
+        supported_extensions = ['.txt', '.pdf', '.md', '.csv']
+        
+        for ext in supported_extensions:
+            default_docs.extend(glob.glob(os.path.join(default_docs_folder, f'*{ext}')))
+        
+        # Add each document to the vector store
+        for doc_path in default_docs:
+            try:
+                self.add_document(doc_path, source=f"Default: {os.path.basename(doc_path)}")
+                print(f"Added default document: {doc_path}")
+            except Exception as e:
+                print(f"Error adding default document {doc_path}: {e}")
         
         print(f"Added {len(default_docs)} default documents to the vector store.")
 
