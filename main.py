@@ -7,7 +7,7 @@ from llm import LLM
 from vectorstore import VectorStore
 
 app = FastAPI()
-llm = LLM(endpoint_url="http://your-gpu-endpoint-url/query?text=")  
+llm = LLM(endpoint_url="https://xk1u8q2ybojavj-8000.proxy.runpod.net/query?text=")  
 vector_store = VectorStore()
 
 # Enable CORS
