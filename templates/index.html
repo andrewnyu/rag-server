@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG System</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap">
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: "Roboto", sans-serif;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #FAFAFA;
+        }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            padding: 20px;
+            background: #FFFFFF;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            text-align: center;
+        }
+        h2 {
+            font-weight: 500;
+            color: #212121;
+            margin-bottom: 20px;
+        }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            border-radius: 6px;
+            font-size: 16px;
+            border: none;
+        }
+        input {
+            background: #F5F5F5;
+            border: 1px solid #E0E0E0;
+        }
+        button {
+            background: #1976D2;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.2s ease-in-out;
+        }
+        button:hover {
+            background: #1565C0;
+        }
+        .response {
+            margin-top: 20px;
+            padding: 12px;
+            background: #E3F2FD;
+            border-left: 4px solid #1976D2;
+            border-radius: 6px;
+            text-align: left;
+            font-size: 16px;
+            color: #0D47A1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>RAG System</h2>
+
+        <!-- File Upload -->
+        <input type="file" id="fileInput" multiple>
+        <button onclick="uploadFiles()">Upload Documents</button>
+
+        <!-- Query Input -->
+        <input type="text" id="queryInput" placeholder="Ask a question...">
+        <button onclick="askQuestion()">Ask</button>
+
+        <!-- Response Box -->
+        <div id="responseBox" class="response" style="display: none;"></div>
+    </div>
+
+    <script>
+        async function uploadFiles() {
+            let files = document.getElementById("fileInput").files;
+            if (files.length === 0) {
+                alert("Please select a file!");
+                return;
+            }
+            
+            let formData = new FormData();
+            for (let file of files) {
+                formData.append("files", file);
+            }
+
+            let response = await fetch("/upload/", { method: "POST", body: formData });
+            let result = await response.json();
+            alert(result.message);
+        }
+
+        async function askQuestion() {
+            let query = document.getElementById("queryInput").value;
+            if (!query) {
+                alert("Please enter a question!");
+                return;
+            }
+
+            let response = await fetch(`/ask/?query=${encodeURIComponent(query)}`);
+            let result = await response.json();
+
+            let responseBox = document.getElementById("responseBox");
+            responseBox.style.display = "block";
+            responseBox.innerHTML = `<b>Answer:</b> ${result.answer}`;
+        }
+    </script>
+
+</body>
+</html>
