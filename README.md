@@ -1,4 +1,4 @@
-# RAG System
+# RAG Server
 
 A Retrieval-Augmented Generation (RAG) system that enhances LLM responses with relevant information from uploaded documents.
 
@@ -10,17 +10,11 @@ A Retrieval-Augmented Generation (RAG) system that enhances LLM responses with r
 - Document management with chunk information
 - Context toggle for transparency
 
-## Docker Setup
+## Quick Start with Docker
 
-### Prerequisites
-
-- Docker and Docker Compose installed on your system
-
-### Running with Docker
-
-1. Clone this repository:
+1. Clone the repository:
    ```
-   git clone <repository-url>
+   git clone git@github.com:andrewnyu/rag-server.git
    cd rag-server
    ```
 
@@ -37,9 +31,75 @@ A Retrieval-Augmented Generation (RAG) system that enhances LLM responses with r
    docker-compose down
    ```
 
-### Persistent Data
+## Deployment with Deploy Keys
 
-Uploaded documents are stored in the `uploads` directory, which is mounted as a volume in the Docker container. This ensures that your documents persist even if the container is restarted.
+For secure deployments on remote servers, you can use deploy keys to authenticate with the Git repository.
+
+### 1. Generate a deploy key
+Run this command to generate a new SSH key:
+
+```
+ssh-keygen -t ed25519 -f ~/.ssh/rag_deploy_key -N "" -C "rag-server-deploy"
+```
+
+### 2. Create or update your .env file
+Create a .env file with your repository URL and deploy key path:
+
+```
+GIT_REPO_URL=git@github.com:andrewnyu/rag-server.git
+GIT_BRANCH=main
+GIT_DEPLOY_KEY_PATH=~/.ssh/rag_deploy_key
+
+# Server settings
+SERVER_PORT=8000
+SERVER_HOST=0.0.0.0
+
+# LLM endpoint (if using a custom endpoint)
+LLM_ENDPOINT_URL=https://your-llm-endpoint-url/query?text=
+```
+
+### 3. Add the public key to your Git repository
+Copy the public key:
+
+```
+cat ~/.ssh/rag_deploy_key.pub
+```
+
+Then add it to your repository:
+- GitHub: Repository Settings > Deploy keys > Add deploy key
+- GitLab: Repository Settings > Repository > Deploy Keys
+
+Make sure to check "Allow write access" if you need to push changes.
+
+### 4. Using the deploy key
+
+#### To clone the repository:
+```
+GIT_SSH_COMMAND="ssh -i ~/.ssh/rag_deploy_key -o StrictHostKeyChecking=no" git clone git@github.com:andrewnyu/rag-server.git
+```
+
+#### To pull from the repository:
+```
+GIT_SSH_COMMAND="ssh -i ~/.ssh/rag_deploy_key -o StrictHostKeyChecking=no" git pull
+```
+
+### 5. Automated updates with the update script
+Make the update script executable:
+
+```
+chmod +x update-rag-server.sh
+```
+
+Run the script to update your deployment:
+
+```
+./update-rag-server.sh
+```
+
+This script will:
+- Clone the repository if it doesn't exist yet
+- Pull the latest changes if it already exists
+- Rebuild and restart the Docker containers
 
 ## Project Structure
 
