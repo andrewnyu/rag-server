@@ -45,6 +45,8 @@ async def ask_question(query: str = Query(..., title="User query")):
     
     # Generate answer using the LLM
     answer = llm.generate(query, docs)
+
+    answer = str(answer).split("Question:")[1] #manually remove the context from the answer
     
     # Return both the answer and context separately
     return JSONResponse(content={
