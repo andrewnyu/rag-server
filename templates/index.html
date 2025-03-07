@@ -21,7 +21,7 @@
         }
         .container {
             width: 100%;
-            max-width: 500px;
+            max-width: 600px;
             padding: 20px;
             background: #FFFFFF;
             box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
@@ -65,6 +65,37 @@
             font-size: 16px;
             color: #0D47A1;
         }
+        .context-container {
+            margin-top: 10px;
+            display: none;
+        }
+        .context {
+            padding: 12px;
+            background: #F5F5F5;
+            border-left: 4px solid #9E9E9E;
+            border-radius: 6px;
+            text-align: left;
+            font-size: 14px;
+            color: #616161;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .toggle-context {
+            background: #9E9E9E;
+            width: auto;
+            padding: 8px 16px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .toggle-context:hover {
+            background: #757575;
+        }
+        .context-item {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #EEEEEE;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -82,6 +113,12 @@
 
         <!-- Response Box -->
         <div id="responseBox" class="response" style="display: none;"></div>
+        
+        <!-- Context Container -->
+        <div id="contextContainer" class="context-container">
+            <button id="toggleContext" class="toggle-context" onclick="toggleContext()">Show Context</button>
+            <div id="contextBox" class="context" style="display: none;"></div>
+        </div>
     </div>
 
     <script>
@@ -109,12 +146,56 @@
                 return;
             }
 
-            let response = await fetch(`/ask/?query=${encodeURIComponent(query)}`);
-            let result = await response.json();
-
+            // Show loading indicator
             let responseBox = document.getElementById("responseBox");
             responseBox.style.display = "block";
-            responseBox.innerHTML = `<b>Answer:</b> ${result.answer}`;
+            responseBox.innerHTML = `<b>Question:</b> ${query}<br><br><b>Answer:</b> Loading...`;
+
+            try {
+                let response = await fetch(`/ask/?query=${encodeURIComponent(query)}`);
+                let result = await response.json();
+
+                // Display only the question and answer (no context)
+                responseBox.innerHTML = `<b>Question:</b> ${query}<br><br><b>Answer:</b> ${result.answer}`;
+                
+                // Clear the input field after asking
+                document.getElementById("queryInput").value = "";
+                
+                // Handle context separately
+                let contextBox = document.getElementById("contextBox");
+                let contextContainer = document.getElementById("contextContainer");
+                let toggleButton = document.getElementById("toggleContext");
+                
+                // Reset context display
+                contextBox.style.display = "none";
+                toggleButton.textContent = "Show Context";
+                
+                // Format and store context
+                if (result.context && result.context.length > 0) {
+                    contextContainer.style.display = "block";
+                    contextBox.innerHTML = "<b>Context Used:</b><br>" + result.context.map(ctx => 
+                        `<div class="context-item">${ctx}</div>`
+                    ).join("");
+                } else {
+                    contextContainer.style.display = "none";
+                }
+            } catch (error) {
+                responseBox.innerHTML = `<b>Question:</b> ${query}<br><br><b>Error:</b> Failed to get response. Please try again.`;
+                console.error("Error fetching answer:", error);
+            }
+        }
+        
+        function toggleContext() {
+            let contextBox = document.getElementById("contextBox");
+            let toggleButton = document.getElementById("toggleContext");
+            
+            if (contextBox.style.display === "none") {
+                contextBox.style.display = "block";
+                toggleButton.textContent = "Hide Context";
+            } else {
+                contextBox.style.display = "none";
+                toggleButton.textContent = "Show Context";
+            }
         }
     </script>
 

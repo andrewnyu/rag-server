@@ -40,6 +40,14 @@ async def upload_file(files: list[UploadFile]):
 # Ask a question
 @app.get("/ask/")
 async def ask_question(query: str = Query(..., title="User query")):
+    # Retrieve relevant documents
     docs = vector_store.retrieve(query)
+    
+    # Generate answer using the LLM
     answer = llm.generate(query, docs)
-    return JSONResponse(content={"answer": answer})
+    
+    # Return both the answer and context separately
+    return JSONResponse(content={
+        "answer": answer,
+        "context": docs
+    })

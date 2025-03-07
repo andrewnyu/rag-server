@@ -6,7 +6,8 @@ class LLM:
 
     def generate(self, query, docs):
         """ Send request to remote LLM inference API """
-        prompt = f"Context: {' '.join(docs)}\nQuestion: {query}\nAnswer:"
+        # Create a prompt that instructs the LLM to only provide the answer without repeating the context
+        prompt = f"Context: {' '.join(docs)}\nQuestion: {query}\nInstructions: Provide a direct answer to the question based on the context. Do not repeat or reference the context in your answer.\nAnswer:"
         response = requests.get(self.endpoint_url + prompt)
 
         if response.status_code == 200:
