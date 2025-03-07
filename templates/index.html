@@ -21,17 +21,25 @@
         }
         .container {
             width: 100%;
-            max-width: 600px;
+            max-width: 800px;
             padding: 20px;
             background: #FFFFFF;
             box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
             border-radius: 8px;
             text-align: center;
+            margin-bottom: 20px;
         }
         h2 {
             font-weight: 500;
             color: #212121;
             margin-bottom: 20px;
+        }
+        h3 {
+            font-weight: 500;
+            color: #424242;
+            margin-top: 30px;
+            margin-bottom: 10px;
+            text-align: left;
         }
         input, button {
             width: 100%;
@@ -96,32 +104,161 @@
             background: #EEEEEE;
             border-radius: 4px;
         }
+        .timing {
+            margin-top: 15px;
+            padding: 10px;
+            background: #F5F5F5;
+            border-radius: 6px;
+            text-align: left;
+            font-size: 14px;
+            color: #616161;
+        }
+        .timing-item {
+            margin: 5px 0;
+        }
+        .document-list {
+            margin-top: 20px;
+            text-align: left;
+        }
+        .document-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            background: #F5F5F5;
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .document-info {
+            flex-grow: 1;
+        }
+        .document-type {
+            background: #E0E0E0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+        .tab-container {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            background: #E0E0E0;
+            cursor: pointer;
+            border-radius: 6px 6px 0 0;
+            margin-right: 2px;
+        }
+        .tab.active {
+            background: #1976D2;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h2>RAG System</h2>
-
-        <!-- File Upload -->
-        <input type="file" id="fileInput" multiple>
-        <button onclick="uploadFiles()">Upload Documents</button>
-
-        <!-- Query Input -->
-        <input type="text" id="queryInput" placeholder="Ask a question...">
-        <button onclick="askQuestion()">Ask</button>
-
-        <!-- Response Box -->
-        <div id="responseBox" class="response" style="display: none;"></div>
         
-        <!-- Context Container -->
-        <div id="contextContainer" class="context-container">
-            <button id="toggleContext" class="toggle-context" onclick="toggleContext()">Show Context</button>
-            <div id="contextBox" class="context" style="display: none;"></div>
+        <div class="tab-container">
+            <div class="tab active" onclick="openTab('chat-tab')">Chat</div>
+            <div class="tab" onclick="openTab('documents-tab')">Documents</div>
+        </div>
+        
+        <div id="chat-tab" class="tab-content active">
+            <!-- Query Input -->
+            <input type="text" id="queryInput" placeholder="Ask a question...">
+            <button onclick="askQuestion()">Ask</button>
+
+            <!-- Response Box -->
+            <div id="responseBox" class="response" style="display: none;"></div>
+            
+            <!-- Timing Information -->
+            <div id="timingBox" class="timing" style="display: none;"></div>
+            
+            <!-- Context Container -->
+            <div id="contextContainer" class="context-container">
+                <button id="toggleContext" class="toggle-context" onclick="toggleContext()">Show Context</button>
+                <div id="contextBox" class="context" style="display: none;"></div>
+            </div>
+        </div>
+        
+        <div id="documents-tab" class="tab-content">
+            <!-- File Upload -->
+            <input type="file" id="fileInput" multiple>
+            <button onclick="uploadFiles()">Upload Documents</button>
+            
+            <h3>Uploaded Documents</h3>
+            <div id="documentList" class="document-list">
+                <p>No documents uploaded yet.</p>
+            </div>
         </div>
     </div>
 
     <script>
+        // Load documents when page loads
+        window.onload = function() {
+            loadDocuments();
+        };
+        
+        function openTab(tabId) {
+            // Hide all tab contents
+            const tabContents = document.getElementsByClassName('tab-content');
+            for (let i = 0; i < tabContents.length; i++) {
+                tabContents[i].classList.remove('active');
+            }
+            
+            // Remove active class from all tabs
+            const tabs = document.getElementsByClassName('tab');
+            for (let i = 0; i < tabs.length; i++) {
+                tabs[i].classList.remove('active');
+            }
+            
+            // Show the selected tab content
+            document.getElementById(tabId).classList.add('active');
+            
+            // Add active class to the clicked tab
+            event.currentTarget.classList.add('active');
+        }
+        
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/documents/');
+                const result = await response.json();
+                
+                const documentList = document.getElementById('documentList');
+                
+                if (result.documents && result.documents.length > 0) {
+                    let html = '';
+                    for (const doc of result.documents) {
+                        html += `
+                            <div class="document-item">
+                                <div class="document-info">
+                                    <strong>${doc.filename}</strong>
+                                    <span class="document-type">${doc.type}</span>
+                                </div>
+                                <div>${doc.size}</div>
+                            </div>
+                        `;
+                    }
+                    documentList.innerHTML = html;
+                } else {
+                    documentList.innerHTML = '<p>No documents uploaded yet.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading documents:', error);
+            }
+        }
+        
         async function uploadFiles() {
             let files = document.getElementById("fileInput").files;
             if (files.length === 0) {
@@ -134,9 +271,17 @@
                 formData.append("files", file);
             }
 
-            let response = await fetch("/upload/", { method: "POST", body: formData });
-            let result = await response.json();
-            alert(result.message);
+            try {
+                let response = await fetch("/upload/", { method: "POST", body: formData });
+                let result = await response.json();
+                alert(`${result.message} Upload time: ${result.upload_time}`);
+                
+                // Reload document list
+                loadDocuments();
+            } catch (error) {
+                alert("Error uploading files. Please try again.");
+                console.error("Upload error:", error);
+            }
         }
 
         async function askQuestion() {
@@ -150,13 +295,26 @@
             let responseBox = document.getElementById("responseBox");
             responseBox.style.display = "block";
             responseBox.innerHTML = `<b>Question:</b> ${query}<br><br><b>Answer:</b> Loading...`;
+            
+            // Hide timing and context initially
+            document.getElementById("timingBox").style.display = "none";
+            document.getElementById("contextContainer").style.display = "none";
 
             try {
                 let response = await fetch(`/ask/?query=${encodeURIComponent(query)}`);
                 let result = await response.json();
 
-                // Display only the question and answer (no context)
+                // Display question and answer
                 responseBox.innerHTML = `<b>Question:</b> ${query}<br><br><b>Answer:</b> ${result.answer}`;
+                
+                // Display timing information
+                let timingBox = document.getElementById("timingBox");
+                timingBox.style.display = "block";
+                timingBox.innerHTML = `
+                    <div class="timing-item"><b>Retrieval Time:</b> ${result.timing.retrieval_time}</div>
+                    <div class="timing-item"><b>LLM Time:</b> ${result.timing.llm_time}</div>
+                    <div class="timing-item"><b>Total Time:</b> ${result.timing.total_time}</div>
+                `;
                 
                 // Clear the input field after asking
                 document.getElementById("queryInput").value = "";

@@ -18,7 +18,6 @@ class VectorStore:
     def _add_default_documents(self):
         """Add default documents to the vector store."""
         default_docs = [
-
         ]
         
         for doc in default_docs:

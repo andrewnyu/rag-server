@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import shutil
+import time
 from llm import LLM
 from vectorstore import VectorStore
 
@@ -26,30 +27,76 @@ async def serve_frontend():
 # Upload documents
 @app.post("/upload/")
 async def upload_file(files: list[UploadFile]):
+    start_time = time.time()
+    
     # Ensure uploads directory exists
     os.makedirs("rag-server/uploads", exist_ok=True)
     
+    uploaded_files = []
     for file in files:
         file_path = f"rag-server/uploads/{file.filename}"
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        
+        # Track source of document
+        source = file.filename
+        
+        # Add document to vector store
         vector_store.add_document(file_path)
+        uploaded_files.append(file.filename)
 
-    return JSONResponse(content={"message": "Files uploaded successfully!"})
+    upload_time = time.time() - start_time
+    
+    return JSONResponse(content={
+        "message": "Files uploaded successfully!",
+        "files": uploaded_files,
+        "upload_time": f"{upload_time:.2f} seconds"
+    })
+
+# Get list of documents
+@app.get("/documents/")
+async def get_documents():
+    # Get list of all documents in the uploads directory
+    documents = []
+    if os.path.exists("rag-server/uploads"):
+        for filename in os.listdir("rag-server/uploads"):
+            file_path = os.path.join("rag-server/uploads", filename)
+            if os.path.isfile(file_path):
+                documents.append({
+                    "filename": filename,
+                    "size": f"{os.path.getsize(file_path) / 1024:.1f} KB",
+                    "type": filename.split('.')[-1].upper() if '.' in filename else "Unknown"
+                })
+    
+    return JSONResponse(content={"documents": documents})
 
 # Ask a question
 @app.get("/ask/")
 async def ask_question(query: str = Query(..., title="User query")):
+    # Start timing
+    start_time = time.time()
+    
     # Retrieve relevant documents
+    retrieval_start = time.time()
     docs = vector_store.retrieve(query)
+    retrieval_time = time.time() - retrieval_start
     
     # Generate answer using the LLM
+    llm_start = time.time()
     answer = llm.generate(query, docs)
-
     answer = str(answer).split("Question:")[1] #manually remove the context from the answer
+    llm_time = time.time() - llm_start
     
-    # Return both the answer and context separately
+    # Calculate total processing time
+    total_time = time.time() - start_time
+    
+    # Return comprehensive response with timing data
     return JSONResponse(content={
         "answer": answer,
-        "context": docs
+        "context": docs,
+        "timing": {
+            "retrieval_time": f"{retrieval_time:.2f} seconds",
+            "llm_time": f"{llm_time:.2f} seconds",
+            "total_time": f"{total_time:.2f} seconds"
+        }
     })
