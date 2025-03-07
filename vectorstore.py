@@ -1,15 +1,30 @@
 import os
-from rank_bm25 import BM25Okapi
-from nltk.tokenize import word_tokenize
-import string
+import numpy as np
+import faiss
+from sentence_transformers import SentenceTransformer
 import PyPDF2
 
-# Initialize empty storage for documents and their text
+# Initialize storage for documents and their embeddings
 class VectorStore:
     def __init__(self):
         self.documents = []
-        self.tokenized_docs = []
-        self.bm25 = None
+        self.embeddings = None
+        self.index = None
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')  # Fast and effective model
+        
+        # Add some default documents if no documents are uploaded
+        self._add_default_documents()
+        
+    def _add_default_documents(self):
+        """Add default documents to the vector store."""
+        default_docs = [
+
+        ]
+        
+        for doc in default_docs:
+            self.add_document(doc)
+        
+        print(f"Added {len(default_docs)} default documents to the vector store.")
 
     def add_document(self, doc_path_or_text: str):
         """Preprocess and add document to the vector store.
@@ -30,15 +45,62 @@ class VectorStore:
             # Assume it's already text
             doc_text = doc_path_or_text
             
-        # Tokenize the document
-        tokens = word_tokenize(doc_text.lower())
-        # Remove punctuation and stopwords (optional)
-        tokens = [word for word in tokens if word not in string.punctuation]
-        self.documents.append(doc_text)
-        self.tokenized_docs.append(tokens)
+        # Skip empty documents
+        if not doc_text or doc_text.strip() == "":
+            print(f"Warning: Empty document skipped.")
+            return
         
-        # Rebuild BM25 index (efficiently done only after bulk insertions)
-        self.bm25 = BM25Okapi(self.tokenized_docs)
+        # Split long documents into chunks (simple approach - split by paragraphs)
+        chunks = self._chunk_document(doc_text)
+        
+        # Add each chunk as a separate document
+        for chunk in chunks:
+            if chunk.strip():
+                self.documents.append(chunk)
+        
+        # Rebuild the index with the new documents
+        self._build_index()
+        
+    def _chunk_document(self, text, max_length=512):
+        """Split document into chunks."""
+        # Simple chunking by paragraphs
+        paragraphs = text.split('\n\n')
+        chunks = []
+        
+        current_chunk = ""
+        for para in paragraphs:
+            if para.strip():
+                if len(current_chunk) + len(para) < max_length:
+                    current_chunk += para + "\n\n"
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = para + "\n\n"
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+            
+        # If no paragraphs were found, fall back to sentence chunking
+        if not chunks:
+            sentences = text.split('.')
+            current_chunk = ""
+            for sentence in sentences:
+                if sentence.strip():
+                    if len(current_chunk) + len(sentence) < max_length:
+                        current_chunk += sentence + ". "
+                    else:
+                        if current_chunk:
+                            chunks.append(current_chunk.strip())
+                        current_chunk = sentence + ". "
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+        
+        # If still no chunks, just use the text as is
+        if not chunks and text.strip():
+            chunks = [text.strip()]
+            
+        return chunks
         
     def _extract_text_from_pdf(self, pdf_path):
         """Extract text from a PDF file."""
@@ -47,41 +109,53 @@ class VectorStore:
             with open(pdf_path, 'rb') as file:
                 reader = PyPDF2.PdfReader(file)
                 for page_num in range(len(reader.pages)):
-                    text += reader.pages[page_num].extract_text() + "\n"
+                    text += reader.pages[page_num].extract_text() + "\n\n"
         except Exception as e:
             print(f"Error extracting text from PDF {pdf_path}: {e}")
             text = f"[Error processing document: {pdf_path}]"
         return text
-
-    def retrieve(self, query: str, top_n=1):
-        """Retrieve top_n relevant documents based on BM25 ranking."""
-        if not self.bm25 or not self.documents:
-            return ["No documents available for retrieval."]
+    
+    def _build_index(self):
+        """Build FAISS index from documents."""
+        if not self.documents:
+            return
             
-        query_tokens = word_tokenize(query.lower())
-        query_tokens = [word for word in query_tokens if word not in string.punctuation]
+        # Generate embeddings for all documents
+        embeddings = self.model.encode(self.documents)
         
-        # Score the query against the stored documents
-        scores = self.bm25.get_scores(query_tokens)
+        # Normalize embeddings for cosine similarity
+        faiss.normalize_L2(embeddings)
         
-        # Get indices of top_n most relevant documents
-        top_docs_idx = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_n]
+        # Create FAISS index
+        dimension = embeddings.shape[1]
+        self.index = faiss.IndexFlatIP(dimension)  # Inner product for cosine similarity with normalized vectors
+        self.index.add(embeddings.astype(np.float32))
+        self.embeddings = embeddings
+
+    def retrieve(self, query: str, top_n=3):
+        """Retrieve top_n relevant documents based on semantic similarity."""
+        if not self.index or not self.documents:
+            return ["No documents have been uploaded yet. Please upload some documents first."]
+            
+        if not query.strip():
+            return ["Your query is empty. Please try a more specific question."]
         
-        # Return the corresponding document texts
-        return [self.documents[idx] for idx in top_docs_idx]
-
-# Example usage (store this in your server code)
-vector_store = VectorStore()
-
-# Add a few documents
-vector_store.add_document("The quick brown fox jumps over the lazy dog.")
-vector_store.add_document("Artificial intelligence is the future of technology.")
-vector_store.add_document("The fox is known for its cunning and agility.")
-
-# Query retrieval
-query = "Tell me about the fox"
-results = vector_store.retrieve(query, top_n=1)
-
-print("Top matching documents:")
-for result in results:
-    print(result)
+        # Generate embedding for the query
+        query_embedding = self.model.encode([query])
+        
+        # Normalize query embedding for cosine similarity
+        faiss.normalize_L2(query_embedding)
+        
+        # Search for similar documents
+        scores, indices = self.index.search(query_embedding.astype(np.float32), min(top_n, len(self.documents)))
+        
+        # Get the documents
+        results = []
+        for i, idx in enumerate(indices[0]):
+            if scores[0][i] > 0.2:  # Threshold for relevance
+                results.append(self.documents[idx])
+        
+        if not results:
+            return ["No relevant information found for your query. Please try a different question."]
+            
+        return results

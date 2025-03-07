@@ -6,8 +6,28 @@ class LLM:
 
     def generate(self, query, docs):
         """ Send request to remote LLM inference API """
-        # Create a prompt that instructs the LLM to only provide the answer without repeating the context
-        prompt = f"Context: {' '.join(docs)}\nQuestion: {query}\nInstructions: Provide a direct answer to the question based on the context. Do not repeat or reference the context in your answer.\nAnswer:"
+        # Format context with better separation
+        if docs and isinstance(docs, list):
+            # Format each document with a separator
+            formatted_docs = []
+            for i, doc in enumerate(docs):
+                formatted_docs.append(f"Document {i+1}:\n{doc}")
+            
+            # Join all formatted documents
+            context = "\n\n---\n\n".join(formatted_docs)
+        else:
+            context = "No relevant information found."
+            
+        # Effective prompt format
+        prompt = f"""Answer the following question based on the provided context.
+
+Context:
+{context}
+
+Question: {query}
+
+Answer:"""
+        
         response = requests.get(self.endpoint_url + prompt)
 
         if response.status_code == 200:

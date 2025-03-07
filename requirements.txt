@@ -5,3 +5,5 @@ sentence-transformers
 torch
 transformers
 numpy
+PyPDF2
+nltk
