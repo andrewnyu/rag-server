@@ -14,9 +14,7 @@ class LLM:
             context = "No relevant information found."
             
         # Enhanced prompt format with better instructions
-        prompt = f"""Answer the following question based ONLY on the provided context. 
-        If the context doesn't contain the information needed to answer the question, 
-        say "I don't have enough information to answer this question" instead of making up an answer.
+        prompt = f"""Answer the following question based ONLY on the provided context. If the context doesn't contain the information needed to answer the question, say "I don't have enough information to answer this question" instead of making up an answer.
 
 Context:
 {context}
