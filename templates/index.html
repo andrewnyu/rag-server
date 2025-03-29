@@ -182,6 +182,82 @@
         .tab-content.active {
             display: block;
         }
+        
+        /* Floating LLM endpoint update form styles */
+        .floating-form {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            padding: 12px;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+            transform: translateY(calc(100% - 40px));
+        }
+        
+        .floating-form:hover,
+        .floating-form.active {
+            transform: translateY(0);
+        }
+        
+        .floating-form-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+        
+        .floating-form-title {
+            font-weight: 500;
+            color: #424242;
+            margin: 0;
+        }
+        
+        .floating-form-content {
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        
+        .floating-form-footer {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+        
+        .floating-form button {
+            width: auto;
+            padding: 8px 12px;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .floating-form input {
+            font-size: 14px;
+            padding: 8px;
+            margin-top: 5px;
+        }
+        
+        .floating-form .status {
+            font-size: 12px;
+            margin-top: 5px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .floating-form .success {
+            background: #E8F5E9;
+            color: #2E7D32;
+        }
+        
+        .floating-form .error {
+            background: #FFEBEE;
+            color: #C62828;
+        }
     </style>
 </head>
 <body>
@@ -192,6 +268,7 @@
         <div class="tab-container">
             <div class="tab active" onclick="openTab('chat-tab')">Chat</div>
             <div class="tab" onclick="openTab('documents-tab')">Documents</div>
+            <div class="tab" onclick="openTab('admin-tab')">Admin</div>
         </div>
         
         <div id="chat-tab" class="tab-content active">
@@ -213,41 +290,112 @@
         </div>
         
         <div id="documents-tab" class="tab-content">
-            <!-- File Upload -->
+            <!-- Upload Documents -->
+            <h3>Upload Documents</h3>
             <input type="file" id="fileInput" multiple>
-            <button onclick="uploadFiles()">Upload Documents</button>
+            <button onclick="uploadFiles()">Upload</button>
             
-            <h3>Uploaded Documents</h3>
+            <h3>Document List</h3>
             <div id="documentList" class="document-list">
-                <p>No documents uploaded yet.</p>
+                Loading documents...
             </div>
+        </div>
+        
+        <div id="admin-tab" class="tab-content">
+            <h3>LLM Endpoint Management</h3>
+            <div id="currentEndpoint" style="margin-bottom: 15px; text-align: left; padding: 10px; background: #f0f0f0; border-radius: 4px;">
+                Loading current endpoint...
+            </div>
+            
+            <div style="text-align: left; margin-bottom: 10px;">
+                <label for="endpointInput">New LLM Endpoint URL:</label>
+            </div>
+            <input type="text" id="endpointInput" placeholder="https://your-llm-endpoint-url/query?text=">
+            <button onclick="updateLLMEndpoint()">Update Endpoint</button>
+            
+            <div id="endpointUpdateResult" style="display: none; margin-top: 15px;"></div>
+        </div>
+    </div>
+
+    <!-- Floating LLM Endpoint Update Form -->
+    <div class="floating-form" id="quickEndpointForm">
+        <div class="floating-form-header" onclick="toggleQuickEndpointForm()">
+            <h4 class="floating-form-title">LLM Endpoint</h4>
+            <span id="formToggleIcon">▲</span>
+        </div>
+        <div class="floating-form-content" id="quickEndpointContent">
+            <div id="quickCurrentEndpoint" style="font-size: 12px; margin-bottom: 8px; word-break: break-all;">
+                Loading current endpoint...
+            </div>
+            <input type="text" id="quickEndpointInput" placeholder="New endpoint URL" style="width: 100%;">
+            <div class="floating-form-footer">
+                <button onclick="updateQuickEndpoint()">Update</button>
+            </div>
+            <div id="quickEndpointStatus" class="status" style="display: none;"></div>
         </div>
     </div>
 
     <script>
-        // Load documents when page loads
-        window.onload = function() {
-            loadDocuments();
-        };
+        // Initialize the application
+        document.addEventListener("DOMContentLoaded", function() {
+            // Load documents list if we're on the documents tab
+            if (document.getElementById("documents-tab").classList.contains("active")) {
+                loadDocuments();
+            }
+            
+            // Load current LLM endpoint if we're on the admin tab
+            if (document.getElementById("admin-tab").classList.contains("active")) {
+                loadCurrentEndpoint();
+            }
+            
+            // Load current endpoint for the quick update form
+            loadQuickEndpoint();
+            
+            // Add event listener for Enter key on query input
+            document.getElementById("queryInput").addEventListener("keypress", function(event) {
+                if (event.key === "Enter") {
+                    askQuestion();
+                }
+            });
+            
+            // Add event listener for Enter key on quick endpoint input
+            document.getElementById("quickEndpointInput").addEventListener("keypress", function(event) {
+                if (event.key === "Enter") {
+                    updateQuickEndpoint();
+                }
+            });
+        });
         
-        function openTab(tabId) {
+        function openTab(tabName) {
             // Hide all tab contents
-            const tabContents = document.getElementsByClassName('tab-content');
+            let tabContents = document.getElementsByClassName("tab-content");
             for (let i = 0; i < tabContents.length; i++) {
-                tabContents[i].classList.remove('active');
+                tabContents[i].classList.remove("active");
             }
             
             // Remove active class from all tabs
-            const tabs = document.getElementsByClassName('tab');
+            let tabs = document.getElementsByClassName("tab");
             for (let i = 0; i < tabs.length; i++) {
-                tabs[i].classList.remove('active');
+                tabs[i].classList.remove("active");
             }
             
-            // Show the selected tab content
-            document.getElementById(tabId).classList.add('active');
+            // Show the selected tab content and mark the tab as active
+            document.getElementById(tabName).classList.add("active");
             
-            // Add active class to the clicked tab
-            event.currentTarget.classList.add('active');
+            // Find and activate the corresponding tab
+            let allTabs = document.getElementsByClassName("tab");
+            for (let i = 0; i < allTabs.length; i++) {
+                if (allTabs[i].getAttribute("onclick").includes(tabName)) {
+                    allTabs[i].classList.add("active");
+                }
+            }
+            
+            // Load content based on the active tab
+            if (tabName === "documents-tab") {
+                loadDocuments();
+            } else if (tabName === "admin-tab") {
+                loadCurrentEndpoint();
+            }
         }
         
         async function loadDocuments() {
@@ -385,7 +533,172 @@
                 toggleButton.textContent = "Show Context";
             }
         }
+        
+        async function loadCurrentEndpoint() {
+            let endpointDiv = document.getElementById("currentEndpoint");
+            endpointDiv.innerHTML = "Loading current endpoint...";
+            
+            try {
+                let response = await fetch("/admin/llm-endpoint/");
+                let result = await response.json();
+                
+                const endpoint = result.endpoint;
+                
+                if (!endpoint) {
+                    endpointDiv.innerHTML = "<strong style='color: #F44336;'>No endpoint set!</strong> Please set an endpoint URL below.";
+                    return;
+                }
+                
+                endpointDiv.innerHTML = `<strong>Current Endpoint:</strong> ${endpoint}`;
+            } catch (error) {
+                endpointDiv.innerHTML = "Error loading current endpoint.";
+                console.error("Error loading endpoint:", error);
+            }
+        }
+        
+        async function updateLLMEndpoint() {
+            let newEndpoint = document.getElementById("endpointInput").value;
+            
+            if (!newEndpoint) {
+                alert("Please enter a valid endpoint URL");
+                return;
+            }
+            
+            // Basic URL validation
+            if (!newEndpoint.startsWith("http://") && !newEndpoint.startsWith("https://")) {
+                alert("URL must start with http:// or https://");
+                return;
+            }
+            
+            let resultDiv = document.getElementById("endpointUpdateResult");
+            resultDiv.style.display = "block";
+            resultDiv.innerHTML = "Updating endpoint...";
+            resultDiv.className = "response";
+            
+            try {
+                // Use a GET request with query params instead of POST with JSON body
+                let response = await fetch(`/admin/update-llm-endpoint/?endpoint_url=${encodeURIComponent(newEndpoint)}`);
+                let result = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `<strong>Success:</strong> ${result.message}`;
+                    resultDiv.style.color = "#4CAF50";
+                    
+                    // Refresh the current endpoint display
+                    loadCurrentEndpoint();
+                    
+                    // Clear the input field
+                    document.getElementById("endpointInput").value = "";
+                } else {
+                    resultDiv.innerHTML = `<strong>Error:</strong> ${result.error || "Failed to update endpoint"}`;
+                    resultDiv.style.color = "#F44336";
+                }
+            } catch (error) {
+                resultDiv.innerHTML = "<strong>Error:</strong> Failed to connect to server";
+                resultDiv.style.color = "#F44336";
+                console.error("Error updating endpoint:", error);
+            }
+        }
+        
+        function toggleQuickEndpointForm() {
+            const form = document.getElementById("quickEndpointForm");
+            const icon = document.getElementById("formToggleIcon");
+            
+            if (form.classList.contains("active")) {
+                form.classList.remove("active");
+                icon.textContent = "▲";
+            } else {
+                form.classList.add("active");
+                icon.textContent = "▼";
+                loadQuickEndpoint();
+            }
+        }
+        
+        async function loadQuickEndpoint() {
+            const endpointDiv = document.getElementById("quickCurrentEndpoint");
+            
+            try {
+                const response = await fetch("/admin/llm-endpoint/");
+                const result = await response.json();
+                
+                const endpoint = result.endpoint;
+                
+                if (!endpoint) {
+                    endpointDiv.innerHTML = "<strong>No endpoint set!</strong> Please set one.";
+                    endpointDiv.style.color = "#F44336";
+                    return;
+                }
+                
+                // Truncate if too long
+                const displayEndpoint = endpoint.length > 30 ? 
+                    endpoint.substring(0, 27) + "..." : 
+                    endpoint;
+                
+                endpointDiv.innerHTML = `<strong>Current:</strong> ${displayEndpoint}`;
+                endpointDiv.title = endpoint; // Show full URL on hover
+                endpointDiv.style.color = "";
+            } catch (error) {
+                endpointDiv.innerHTML = "Error loading endpoint";
+                console.error("Error loading endpoint:", error);
+            }
+        }
+        
+        async function updateQuickEndpoint() {
+            const newEndpoint = document.getElementById("quickEndpointInput").value;
+            const statusDiv = document.getElementById("quickEndpointStatus");
+            
+            if (!newEndpoint) {
+                statusDiv.textContent = "Please enter a valid URL";
+                statusDiv.className = "status error";
+                statusDiv.style.display = "block";
+                return;
+            }
+            
+            // Basic URL validation
+            if (!newEndpoint.startsWith("http://") && !newEndpoint.startsWith("https://")) {
+                statusDiv.textContent = "URL must start with http:// or https://";
+                statusDiv.className = "status error";
+                statusDiv.style.display = "block";
+                return;
+            }
+            
+            statusDiv.textContent = "Updating...";
+            statusDiv.className = "status";
+            statusDiv.style.display = "block";
+            
+            try {
+                const response = await fetch(`/admin/update-llm-endpoint/?endpoint_url=${encodeURIComponent(newEndpoint)}`);
+                const result = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = "Updated successfully!";
+                    statusDiv.className = "status success";
+                    
+                    // Refresh both endpoint displays
+                    loadQuickEndpoint();
+                    if (document.getElementById("admin-tab").classList.contains("active")) {
+                        loadCurrentEndpoint();
+                    }
+                    
+                    // Clear the input field
+                    document.getElementById("quickEndpointInput").value = "";
+                    
+                    // Auto-hide the status after 3 seconds
+                    setTimeout(() => {
+                        statusDiv.style.display = "none";
+                    }, 3000);
+                } else {
+                    statusDiv.textContent = result.error || "Update failed";
+                    statusDiv.className = "status error";
+                }
+            } catch (error) {
+                statusDiv.textContent = "Connection error";
+                statusDiv.className = "status error";
+                console.error("Error updating endpoint:", error);
+            }
+        }
     </script>
 
 </body>
 </html>
+

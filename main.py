@@ -6,9 +6,15 @@ import shutil
 import time
 from llm import LLM
 from vectorstore import VectorStore
+from dotenv import load_dotenv, set_key
+import re
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
-llm = LLM(endpoint_url="https://xk1u8q2ybojavj-8000.proxy.runpod.net/query?text=")  
+# Initialize LLM with endpoint from environment
+llm = LLM(endpoint_url=os.getenv("LLM_ENDPOINT_URL"))
 vector_store = VectorStore()
 
 # Enable CORS
@@ -23,6 +29,67 @@ app.add_middleware(
 @app.get("/")
 async def serve_frontend():
     return FileResponse("templates/index.html")
+
+# Update LLM endpoint
+@app.get("/admin/update-llm-endpoint/")
+async def update_llm_endpoint(endpoint_url: str = Query(..., description="New LLM endpoint URL")):
+    global llm
+    
+    try:
+        # Validate URL format
+        if not re.match(r'^https?://.+', endpoint_url):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid URL format. URL must start with http:// or https://"}
+            )
+        
+        # Create a new LLM instance with the updated endpoint
+        new_llm = LLM(endpoint_url=endpoint_url)
+        
+        # Test the endpoint with a simple query
+        try:
+            test_response = new_llm.generate("test", ["This is a test document"])
+            
+            # Check if the response indicates an error
+            if test_response and test_response.startswith("Error:"):
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Endpoint test failed: {test_response}"}
+                )
+        except Exception as e:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Failed to test endpoint: {str(e)}"}
+            )
+        
+        # If we get here, the endpoint is working, so update the global LLM instance
+        llm = new_llm
+        
+        # Update the .env file if it exists
+        env_file = ".env"
+        if os.path.exists(env_file):
+            set_key(env_file, "LLM_ENDPOINT_URL", endpoint_url)
+        else:
+            # Create a new .env file with the endpoint
+            with open(env_file, "w") as f:
+                f.write(f"LLM_ENDPOINT_URL={endpoint_url}\n")
+        
+        return JSONResponse(content={
+            "message": "LLM endpoint updated successfully",
+            "endpoint": endpoint_url
+        })
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to update LLM endpoint: {str(e)}"}
+        )
+
+# Get current LLM endpoint
+@app.get("/admin/llm-endpoint/")
+async def get_llm_endpoint():
+    return JSONResponse(content={
+        "endpoint": llm.endpoint_url
+    })
 
 # Upload documents
 @app.post("/upload/")
