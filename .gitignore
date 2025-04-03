@@ -20,6 +20,10 @@ var/
 .installed.cfg
 *.egg
 
+# RAG server folders
+uploads/
+chunks/
+
 # Virtual Environment
 venv/
 ENV/

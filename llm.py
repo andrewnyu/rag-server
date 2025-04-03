@@ -1,4 +1,6 @@
 import requests
+from vectorstore import MultiFileRAG
+#from langchain_core.prompts import PromptTemplate
 
 class LLM:
     def __init__(self, endpoint_url="http://your-gpu-endpoint-url/query?text="):
