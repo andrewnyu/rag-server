@@ -113,7 +113,7 @@ async def upload_file(files: list[UploadFile]):
             shutil.copyfileobj(file.file, buffer)
         
         # Add document to vector store with source
-        llm.add_document(file_path, source=file.filename)
+        llm.add_documents(file_path, source=file.filename)
         uploaded_files.append(file.filename)
 
     upload_time = time.time() - start_time
@@ -134,14 +134,15 @@ async def get_documents():
         document_list = files
     
     # Add file system information for uploaded documents
-    for doc in document_list:
-        if doc["filename"] != "Default Example":
-            file_path = os.path.join("rag-server/uploads", doc["filename"])
+    for filename in document_list:
+        if filename != "Default Example":
+            file_path = os.path.join("rag-server/uploads", filename)
             if os.path.exists(file_path):
-                # Update with actual file size
-                doc["size"] = f"{os.path.getsize(file_path) / 1024:.1f} KB"
-                # Add last modified time
-                doc["last_modified"] = time.ctime(os.path.getmtime(file_path))
+                document_list.append({
+                    "filename": filename,
+                    "size": f"{os.path.getsize(file_path) / 1024:.1f} KB",
+                    "last_modified": time.ctime(os.path.getmtime(file_path))
+                })
     
     return JSONResponse(content={"documents": document_list})
 
