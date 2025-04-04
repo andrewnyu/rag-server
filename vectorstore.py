@@ -1,172 +1,152 @@
 import os
 import requests
-from typing import Optional, List
+from pathlib import Path
+from typing import Optional, List, Union
 
-#langchain
-from langchain_community.document_loaders import CSVLoader, PyPDFLoader 
+from dotenv import load_dotenv
+from loguru import logger
+
+from langchain_community.document_loaders import CSVLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.language_models import BaseLLM
 from langchain.schema import LLMResult, Generation
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
 
-# from langchain_core.runnables import RunnablePassthrough
-# from langchain_core.output_parsers import StrOutputParser
-# from langchain.llms import HuggingFaceHub
-
-from pathlib import Path
-from dotenv import load_dotenv
-
-# Load environment variables
+# Load .env vars
 load_dotenv()
 
-# Custom LLM that communicates with a RunPod-hosted endpoint
+
 class RunPodLLM(BaseLLM):
+    """Custom LLM that communicates with a RunPod-hosted endpoint."""
     endpoint_url: str = os.getenv("LLM_ENDPOINT_URL")
-    
-    # def __init__(self):
-    #     super().__init__()
-    #     self.endpoint_url = os.getenv("LLM_ENDPOINT_URL")
 
     def _llm_type(self) -> str:
         return "runpod-llama"
 
-    def _generate(
-            self,
-            prompts: List[str],
-            stop: Optional[List[str]] = None
-        ) -> LLMResult:
-            generations = []
+    def _generate(self, prompts: List[str], stop: Optional[List[str]] = None) -> LLMResult:
+        generations = []
+        for prompt in prompts:
+            try:
+                logger.debug(f"Sending prompt to LLM: {prompt[:80]}...")
+                response = requests.post(
+                    self.endpoint_url,
+                    json={"prompt": prompt, "max_new_tokens": 512, "temperature": 0.7, "stop": stop},
+                    timeout=60
+                )
+                response.raise_for_status()
+                output = response.json().get("generated_text", "[No output]")
+            except Exception as e:
+                logger.error(f"RunPod error: {e}")
+                output = f"[RunPod error: {str(e)}]"
+            generations.append([Generation(text=output)])
+        return LLMResult(generations=generations)
 
-            for prompt in prompts:
-                try:
-                    payload = {
-                        "prompt": prompt,
-                        "max_new_tokens": 512,
-                        "temperature": 0.7,
-                    }
-                    if stop:
-                        payload["stop"] = stop
-
-                    response = requests.post(self.endpoint_url, json=payload, timeout=60)
-                    response.raise_for_status()
-                    output = response.json().get("generated_text", "[No output]")
-
-                except Exception as e:
-                    output = f"[RunPod error: {str(e)}]"
-
-                generations.append([Generation(text=output)])
-
-            return LLMResult(generations=generations)
 
 class VectorStore:
-    def __init__(self, upload_dir="uploads", endpoint_url="http://your-gpu-endpoint-url/query?text="):
+    def __init__(self, upload_dir: Union[str, Path] = "uploads", endpoint_url=None):
         self.endpoint_url = endpoint_url or os.getenv("LLM_ENDPOINT_URL")
         self.upload_dir = Path(upload_dir)
         self.docs = []
         self.vectorstore = None
         self.qa_chain = None
         self.rag_chain = None
-    
-    def load_existing_files(self):
-        print(f"[INFO] Scanning directory: {self.upload_dir}")
-        for file_path in self.upload_dir.glob("*"):
-            if file_path.suffix.lower() == ".csv":
-                loader = CSVLoader(file_path=str(file_path))
-            elif file_path.suffix.lower() == ".pdf":
-                loader = PyPDFLoader(str(file_path))
-            else:
-                print(f"[SKIPPED] Unsupported file: {file_path.name}")
-                continue
+
+    def _load_file(self, file_path: Path):
+        ext = file_path.suffix.lower()
+        loader = None
+        if ext == ".csv":
+            loader = CSVLoader(file_path=str(file_path))
+        elif ext == ".pdf":
+            loader = PyPDFLoader(str(file_path))
+        else:
+            logger.warning(f"Unsupported file type: {file_path.name}")
+            return []
+        try:
             docs = loader.load()
-            print(f"[LOADED] {file_path.name} with {len(docs)} documents")
+            logger.info(f"Loaded {file_path.name} with {len(docs)} documents")
+            return docs
+        except Exception as e:
+            logger.error(f"Failed to load {file_path.name}: {e}")
+            return []
+
+    def load_existing_files(self):
+        logger.info(f"Scanning directory: {self.upload_dir}")
+        for file_path in self.upload_dir.glob("*"):
+            docs = self._load_file(file_path)
             self.docs.extend(docs)
-            
+
     def split_existing_documents(self):
-        print(f"[INFO] Splitting {len(self.docs)} documents into chunks...")
+        logger.info(f"Splitting {len(self.docs)} documents into chunks...")
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         self.docs = splitter.split_documents(self.docs)
-        print(f"[INFO] Total chunks created: {len(self.docs)}")
+        logger.success(f"Total chunks created: {len(self.docs)}")
 
     def build_vectorstore(self):
+        logger.info("Building vectorstore with embeddings...")
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-l6-v2")
         self.vectorstore = Chroma.from_documents(
             documents=self.docs,
             embedding=embeddings,
             collection_name="my_collection"
-            )
-    
-    def load_uploaded_file(self, uploaded_file):
-        if uploaded_file.suffix.lower() == ".csv":
-            loader = CSVLoader(uploaded_file)
-        elif uploaded_file.suffix.lower() == ".pdf":
-            loader = PyPDFLoader(str(uploaded_file))
-        else:
-            print(f"[SKIPPED] Unsupported file: {uploaded_file.name}")
-        uploaded_file_doc = loader.load()
-        print(f"[LOADED] {uploaded_file.name} with {len(uploaded_file_doc)} documents")
-        
-        return uploaded_file_doc
-    
-    def split_document(self, uploaded_file_doc):
-        
-        chunks = []
-        print(f"[INFO] Splitting {len(uploaded_file_doc)} documents into chunks...")
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        chunks = splitter.split_documents(uploaded_file_doc)
-        print(f"[INFO] Total chunks created: {len(chunks)}")
-        
-        return chunks
-        
-    def add_documents(self, uploaded_files):
+        )
+        logger.success("Vectorstore built successfully.")
+
+    def add_documents(self, uploaded_files: List[Path]):
         for file in uploaded_files:
-            doc = self.load_uploaded_file(file)
-            chunks = self.split_document(doc)
+            docs = self._load_file(file)
+            if not docs:
+                continue
+            chunks = self._split_documents(docs)
             self.vectorstore.add_documents(chunks)
-        
+            logger.info(f"Added {len(chunks)} chunks from {file.name}")
+
+    def _split_documents(self, docs):
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        return splitter.split_documents(docs)
+
     def build_qa(self):
-        print("[INFO] Initializing RetrievalQA chain...")
+        logger.info("Setting up Retrieval-Augmented Generation (RAG) chain...")
         llm = RunPodLLM()
         retriever = self.vectorstore.as_retriever()
-        system_prompt = (
-            "You are an assistant for question-answering tasks. "
-            "Use the following pieces of retrieved context to answer "
-            "the question. If you don't know the answer, say that you "
-            "don't know. Use three sentences maximum and keep the "
-            "answer concise."
-            "\n\n"
-            "{context}"
-        )
+
         prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", "{input}"),
-            
+            ("system",
+             "You are an assistant for question-answering tasks. Use the retrieved context below. "
+             "If you don't know the answer, say so. Be concise.\n\n{context}"),
+            ("human", "{input}")
         ])
+
         self.qa_chain = create_stuff_documents_chain(llm, prompt)
         self.rag_chain = create_retrieval_chain(retriever, self.qa_chain)
-        
-    def ask(self, query):
-        result = self.rag_chain.invoke({"input":query})
-        print(f"\n[ANSWER] {result['result']}")
+        logger.success("RAG QA chain initialized.")
+
+    def ask(self, query: str):
+        logger.info(f"Querying: {query}")
+        result = self.rag_chain.invoke({"input": query})
+        print(f"\n [ANSWER] {result['result']}")
         print("[SOURCES]:")
         for doc in result['source_documents']:
             print(" -", doc.metadata.get("source", "Unknown"))
-        
         return result
-    
-    def retrieve(self, query): 
+
+    def retrieve(self, query: str):
         return self.vectorstore.similarity_search(query, k=3)
 
-def initiate_rag():
+
+def initiate_rag() -> VectorStore:
+    logger.info("Initializing RAG pipeline...")
     rag = VectorStore(upload_dir="uploads")
     rag.load_existing_files()
     rag.split_existing_documents()
     rag.build_vectorstore()
     rag.build_qa()
+    logger.success("RAG pipeline ready.")
+    return rag
+
 
 if __name__ == "__main__":
-    initiate_rag()
-            
+    rag = initiate_rag()
