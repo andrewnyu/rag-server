@@ -3,11 +3,15 @@ from vectorstore import MultiFileRAG
 #from langchain_core.prompts import PromptTemplate
 
 class LLM:
-    def __init__(self, endpoint_url="http://your-gpu-endpoint-url/query?text="):
+    def __init__(self, endpoint_url=None):
         self.endpoint_url = endpoint_url
 
     def generate(self, query, docs):
         """ Send request to remote LLM inference API with improved context handling """
+        # Check if endpoint is set
+        if not self.endpoint_url:
+            return "Error: No LLM endpoint set. Please configure an endpoint URL."
+            
         # Format context with better separation
         if docs and isinstance(docs, list):
             # The documents are already formatted by the vectorstore
@@ -33,9 +37,12 @@ Instructions:
 
 Answer:"""
         
-        response = requests.get(self.endpoint_url + prompt)
+        try:
+            response = requests.get(self.endpoint_url + prompt)
 
-        if response.status_code == 200:
-            return response.json().get("response", "No response received")
-        else:
-            return f"Error: {response.status_code}, {response.text}"
+            if response.status_code == 200:
+                return response.json().get("response", "No response received")
+            else:
+                return f"Error: {response.status_code}, {response.text}"
+        except Exception as e:
+            return f"Error connecting to LLM endpoint: {str(e)}"

@@ -11,6 +11,11 @@ import re
 
 # Load environment variables
 load_dotenv()
+from dotenv import load_dotenv, set_key
+import re
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
 # Initialize LLM with endpoint from environment
