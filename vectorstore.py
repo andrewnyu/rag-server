@@ -6,13 +6,13 @@ from typing import Optional, List, Union
 from dotenv import load_dotenv
 from loguru import logger
 
-from langchain_community.document_loaders import CSVLoader, PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import CSVLoader, PyPDFLoader 
+from langchain_text_splitters import RecursiveCharacterTextSplitter 
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.language_models import BaseLLM
-from langchain.schema import LLMResult, Generation
+from langchain_core.outputs import LLMResult, Generation
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 
@@ -23,22 +23,42 @@ load_dotenv()
 class RunPodLLM(BaseLLM):
     """Custom LLM that communicates with a RunPod-hosted endpoint."""
     endpoint_url: str = os.getenv("LLM_ENDPOINT_URL")
+    if not endpoint_url:
+        raise ValueError("Environment variable 'LLM_ENDPOINT_URL' is not set.")
 
     def _llm_type(self) -> str:
         return "runpod-llama"
 
     def _generate(self, prompts: List[str], stop: Optional[List[str]] = None) -> LLMResult:
         generations = []
+        headers = {
+        # "Authorization": f"Bearer {os.getenv('RUNPOD_API_KEY')}",
+        "Content-Type": "application/json"
+        }
         for prompt in prompts:
             try:
                 logger.debug(f"Sending prompt to LLM: {prompt[:80]}...")
+                payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": 512,
+                    "temperature": 0.5,
+                    "stop": stop if stop else []
+                    }
+                }
                 response = requests.post(
-                    self.endpoint_url,
-                    json={"prompt": prompt, "max_new_tokens": 512, "temperature": 0.7, "stop": stop},
-                    timeout=60
+                    self.endpoint_url.rstrip("/") + "/query?text=",
+                    headers=headers,
+                    json=payload,
+                    # timeout=60,
+                    verify=False    # Disable SSL verification for local testing
                 )
                 response.raise_for_status()
-                output = response.json().get("generated_text", "[No output]")
+                try:
+                    output = response.json().get("generated_text", "[No output]")
+                except requests.exceptions.JSONDecodeError:
+                    logger.error("Failed to decode JSON response")
+                    output = "[Invalid JSON response]"
             except Exception as e:
                 logger.error(f"RunPod error: {e}")
                 output = f"[RunPod error: {str(e)}]"
@@ -48,7 +68,7 @@ class RunPodLLM(BaseLLM):
 
 class VectorStore:
     def __init__(self, upload_dir: Union[str, Path] = "uploads", endpoint_url=None):
-        self.endpoint_url = endpoint_url or os.getenv("LLM_ENDPOINT_URL")
+        self.endpoint_url = endpoint_url or os.getenv("LLM_ENDPOINT_URL") + "/query?text="
         self.upload_dir = Path(upload_dir)
         self.docs = []
         self.vectorstore = None
@@ -110,12 +130,14 @@ class VectorStore:
 
     def build_qa(self):
         logger.info("Setting up Retrieval-Augmented Generation (RAG) chain...")
-        llm = RunPodLLM()
-        retriever = self.vectorstore.as_retriever()
+        llm = llm = RunPodLLM()
+        
+        retriever = self.vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 10})
 
         prompt = ChatPromptTemplate.from_messages([
             ("system",
-             "You are an assistant for question-answering tasks. Use the retrieved context below. "
+             "You are an assistant for question-answering tasks. Use the retrieved context below which contains the product list of our company."
+             "Provide possible product suggestions based on the query and the context."
              "If you don't know the answer, say so. Be concise.\n\n{context}"),
             ("human", "{input}")
         ])
@@ -125,16 +147,24 @@ class VectorStore:
         logger.success("RAG QA chain initialized.")
 
     def ask(self, query: str):
-        logger.info(f"Querying: {query}")
-        result = self.rag_chain.invoke({"input": query})
-        print(f"\n [ANSWER] {result['result']}")
-        print("[SOURCES]:")
-        for doc in result['source_documents']:
-            print(" -", doc.metadata.get("source", "Unknown"))
-        return result
-
+        try:   
+            logger.info(f"Querying: {query}")
+            result = self.rag_chain.invoke({"input": query})
+            logger.info(f"Answer: {result.get('result', '[No answer]')}")
+            logger.info("Sources:")
+            for doc in result.get('source_documents', []):
+                print(" -", doc.metadata.get("source", "Unknown"))
+            return result
+    
+        except Exception as e:
+            logger.error(f"Failed to process query: {e}")
+            return {"result": f"[Error] {str(e)}", "source_documents": []}
+        
     def retrieve(self, query: str):
-        return self.vectorstore.similarity_search(query, k=3)
+        if not self.vectorstore:
+            logger.error("Vectorstore is not initialized. Please build the vectorstore first.")
+            return {"error": "Vectorstore is not initialized."}
+        return self.vectorstore.similarity_search(query, k=10)
 
 
 def initiate_rag() -> VectorStore:
@@ -149,4 +179,4 @@ def initiate_rag() -> VectorStore:
 
 
 if __name__ == "__main__":
-    rag = initiate_rag()
+    pass

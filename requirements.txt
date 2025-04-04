@@ -17,6 +17,7 @@ langchain-core
 langchain-text-splitters
 langchain-chroma
 langchain-huggingface
+
 pypdf
 loguru
 pathlib

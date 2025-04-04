@@ -6,11 +6,9 @@ import shutil
 import time
 # from llm import LLM
 from vectorstore import VectorStore
-from dotenv import load_dotenv, set_key
-import re
+from pathlib import Path
 
 # Load environment variables
-load_dotenv()
 from dotenv import load_dotenv, set_key
 import re
 
@@ -29,13 +27,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/healthcheck")
+async def healthcheck():
+    return {"status": "ok"}
+
 # Serve frontend
 @app.get("/")
 async def serve_frontend():
     return FileResponse("templates/index.html")
 
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
     llm.load_existing_files()
     llm.split_existing_documents()
     llm.build_vectorstore()
@@ -60,7 +62,7 @@ async def update_llm_endpoint(endpoint_url: str = Query(..., description="New LL
         
         # Test the endpoint with a simple query
         try:
-            test_response = new_llm.ask("test", ["This is a test document"])
+            test_response = new_llm.ask("What are you")
             
             # Check if the response indicates an error
             if test_response and test_response.startswith("Error:"):
@@ -118,7 +120,7 @@ async def upload_file(files: list[UploadFile]):
             shutil.copyfileobj(file.file, buffer)
         
         # Add document to vector store with source
-        llm.add_documents(file_path, source=file.filename)
+        llm.add_documents([Path(file_path)])
         uploaded_files.append(file.filename)
 
     upload_time = time.time() - start_time
@@ -136,7 +138,7 @@ async def get_documents():
     document_list = []
     
     for _, _, files in os.walk(llm.upload_dir):
-        document_list = files
+        document_list.extend(files)
     
     # Add file system information for uploaded documents
     for filename in document_list:
@@ -164,14 +166,12 @@ async def ask_question(query: str = Query(..., title="User query")):
     
     # Generate answer using the LLM
     llm_start = time.time()
-    answer = llm.ask(query)
-
     try:
-        # answer = str(answer).split("Question:")[1] #manually remove the context from the answer
-        pass
-    except IndexError:
-        pass
-    
+        answer_result = llm.ask(query)
+        answer = answer_result.get("answer", "[No answer]") if isinstance(answer_result, dict) else "[Invalid response format]"
+    except Exception as e:
+        answer = f"[Error occurred: {str(e)}]"
+
     llm_time = time.time() - llm_start
     
     # Calculate total processing time
@@ -180,17 +180,10 @@ async def ask_question(query: str = Query(..., title="User query")):
     # Extract just the content for display in the UI
     context_for_display = []
     for doc in docs:
-        # Extract source and content from the formatted string
-        if isinstance(doc, str):
-            parts = doc.split("\n\n", 1)
-            if len(parts) > 1:
-                source = parts[0].replace("[Document ", "").split("]")[0]
-                content = parts[1]
-                context_for_display.append({
-                    "source": source,
-                    "content": content[:300] + "..." if len(content) > 300 else content
-                })
-    
+        context_for_display.append({
+            "source": doc.metadata.get("source", "Unknown"),
+            "content": doc.page_content[:300] + "..." if len(doc.page_content) > 300 else doc.page_content
+        })
     # Return comprehensive response with timing data
     return JSONResponse(content={
         "answer": answer,
