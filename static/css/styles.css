@@ -1,0 +1,252 @@
+* {
+    box-sizing: border-box;
+    font-family: "Roboto", sans-serif;
+}
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    background: #FAFAFA;
+}
+.container {
+    width: 100%;
+    max-width: 800px;
+    padding: 20px;
+    background: #FFFFFF;
+    box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    text-align: center;
+    margin-bottom: 20px;
+}
+h2 {
+    font-weight: 500;
+    color: #212121;
+    margin-bottom: 20px;
+}
+h3 {
+    font-weight: 500;
+    color: #424242;
+    margin-top: 30px;
+    margin-bottom: 10px;
+    text-align: left;
+}
+input, button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: 6px;
+    font-size: 16px;
+    border: none;
+}
+input {
+    background: #F5F5F5;
+    border: 1px solid #E0E0E0;
+}
+button {
+    background: #1976D2;
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+    transition: 0.2s ease-in-out;
+}
+button:hover {
+    background: #1565C0;
+}
+.response {
+    margin-top: 20px;
+    padding: 12px;
+    background: #E3F2FD;
+    border-left: 4px solid #1976D2;
+    border-radius: 6px;
+    text-align: left;
+    font-size: 16px;
+    color: #0D47A1;
+}
+.context-container {
+    margin-top: 10px;
+    display: none;
+}
+.context {
+    padding: 12px;
+    background: #F5F5F5;
+    border-left: 4px solid #9E9E9E;
+    border-radius: 6px;
+    text-align: left;
+    font-size: 14px;
+    color: #616161;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.toggle-context {
+    background: #9E9E9E;
+    width: auto;
+    padding: 8px 16px;
+    margin-top: 10px;
+    font-size: 14px;
+}
+.toggle-context:hover {
+    background: #757575;
+}
+.context-item {
+    margin-bottom: 10px;
+    padding: 8px;
+    background: #EEEEEE;
+    border-radius: 4px;
+}
+.timing {
+    margin-top: 15px;
+    padding: 10px;
+    background: #F5F5F5;
+    border-radius: 6px;
+    text-align: left;
+    font-size: 14px;
+    color: #616161;
+}
+.timing-item {
+    margin: 5px 0;
+}
+.document-list {
+    margin-top: 20px;
+    text-align: left;
+}
+.document-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    background: #F5F5F5;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+}
+.document-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+.document-info {
+    flex-grow: 1;
+}
+.document-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #757575;
+    margin-top: 5px;
+}
+.document-type {
+    background: #E0E0E0;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 10px;
+}
+.document-chunks {
+    background: #E3F2FD;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-left: 10px;
+    color: #1976D2;
+}
+.tab-container {
+    display: flex;
+    margin-bottom: 20px;
+}
+.tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    background: #E0E0E0;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    margin-right: 2px;
+}
+.tab.active {
+    background: #1976D2;
+    color: white;
+}
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+
+/* Floating LLM endpoint update form styles */
+.floating-form {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    background: #FFFFFF;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 12px;
+    z-index: 1000;
+    transition: transform 0.3s ease;
+    transform: translateY(calc(100% - 40px));
+}
+
+.floating-form:hover,
+.floating-form.active {
+    transform: translateY(0);
+}
+
+.floating-form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+
+.floating-form-title {
+    font-weight: 500;
+    color: #424242;
+    margin: 0;
+}
+
+.floating-form-content {
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.floating-form-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.floating-form button {
+    width: auto;
+    padding: 8px 12px;
+    font-size: 14px;
+    margin-top: 5px;
+}
+
+.floating-form input {
+    font-size: 14px;
+    padding: 8px;
+    margin-top: 5px;
+}
+
+.floating-form .status {
+    font-size: 12px;
+    margin-top: 5px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.floating-form .success {
+    background: #E8F5E9;
+    color: #2E7D32;
+}
+
+.floating-form .error {
+    background: #FFEBEE;
+    color: #C62828;
+} 

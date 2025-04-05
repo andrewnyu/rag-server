@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import os
 import shutil
 import time
@@ -16,6 +17,9 @@ app = FastAPI()
 # Initialize LLM with endpoint from environment
 llm = LLM(endpoint_url=os.getenv("LLM_ENDPOINT_URL"))
 vector_store = VectorStore()
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Enable CORS
 app.add_middleware(
