@@ -41,7 +41,7 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-rag-server/uploads/
+uploads/
 rag-server/db/
 *.log
 *.sqlite
