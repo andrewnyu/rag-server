@@ -5,6 +5,7 @@ from sentence_transformers import SentenceTransformer
 import PyPDF2
 import glob
 from dotenv import load_dotenv
+import gc  # Add garbage collection
 
 # Load environment variables
 load_dotenv()
@@ -14,7 +15,6 @@ class VectorStore:
     def __init__(self):
         self.documents = []
         self.document_sources = []  # Track document sources
-        self.embeddings = None
         self.index = None
         self.model = SentenceTransformer('all-MiniLM-L6-v2')  # Fast and effective model
         
@@ -53,16 +53,27 @@ class VectorStore:
             doc_path_or_text: Either a file path to a document or the document text itself
             source: Source of the document (e.g., filename or description)
         """
+        print(f"Processing document: {source or doc_path_or_text}")
+        
         # Check if the input is a file path
         if os.path.isfile(doc_path_or_text):
             # Extract text based on file type
             if doc_path_or_text.lower().endswith('.pdf'):
+                print("Extracting text from PDF...")
                 doc_text = self._extract_text_from_pdf(doc_path_or_text)
                 source = source or os.path.basename(doc_path_or_text)
             else:
-                # For text files or other formats
+                # For text files or other formats - process in chunks to save memory
+                print("Reading text file...")
+                doc_text = ""
                 with open(doc_path_or_text, 'r', encoding='utf-8', errors='ignore') as f:
-                    doc_text = f.read()
+                    # Read file in chunks of 1MB
+                    chunk_size = 1024 * 1024  # 1MB chunks
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        doc_text += chunk
                 source = source or os.path.basename(doc_path_or_text)
         else:
             # Assume it's already text
@@ -73,11 +84,21 @@ class VectorStore:
         if not doc_text or doc_text.strip() == "":
             print(f"Warning: Empty document skipped.")
             return
+            
+        text_length = len(doc_text)
+        print(f"Document size: {text_length} characters")
         
-        # Split long documents into chunks (simple approach - split by paragraphs)
-        chunks = self._chunk_document(doc_text)
+        # Split long documents into chunks using the simpler algorithm
+        print(f"Chunking document...")
+        chunks = self.simple_chunk(doc_text)
+        print(f"Created {len(chunks)} chunks")
+        
+        # Clear doc_text from memory
+        doc_text = None
+        gc.collect()
         
         # Add each chunk as a separate document
+        print(f"Adding chunks to document store...")
         for i, chunk in enumerate(chunks):
             if chunk.strip():
                 self.documents.append(chunk)
@@ -87,92 +108,56 @@ class VectorStore:
                 else:
                     self.document_sources.append(source)
         
-        # Rebuild the index with the new documents
-        self._build_index()
+        # Clear chunks from memory
+        chunks = None
+        gc.collect()
         
-    def _chunk_document(self, text, max_length=512, overlap=100):
-        """Split document into chunks with overlap to preserve context.
+        # Rebuild the index with the new documents
+        print(f"Building index...")
+        self._build_index()
+        print(f"Document processing complete")
+        
+    def simple_chunk(self, text, chunk_size=1024, overlap=50):
+        """Split document into chunks with minimal memory usage.
         
         Args:
             text: The document text to chunk
-            max_length: Maximum chunk size in characters
+            chunk_size: Maximum chunk size in characters
             overlap: Number of characters to overlap between chunks
+        
+        Returns:
+            List of text chunks
         """
-        # First try to split by paragraphs
-        paragraphs = [p for p in text.split('\n\n') if p.strip()]
+        # Strip the text to remove extra whitespace
+        text = text.strip()
         
-        # If paragraphs are too long, we'll need to split them further
+        # Handle empty text
+        if not text:
+            return []
+            
+        # Handle text shorter than chunk_size
+        if len(text) <= chunk_size:
+            return [text]
+            
+        # Initialize result
         chunks = []
-        current_chunk = ""
-        current_length = 0
         
-        for para in paragraphs:
-            para = para.strip()
-            para_length = len(para)
+        # Calculate effective chunk size (accounting for overlap)
+        stride = chunk_size - overlap
+        
+        # Split text into chunks with overlap
+        for i in range(0, len(text), stride):
+            # Get chunk of text
+            chunk = text[i:i + chunk_size]
             
-            # If paragraph fits in current chunk, add it
-            if current_length + para_length <= max_length:
-                if current_chunk:
-                    current_chunk += "\n\n" + para
-                else:
-                    current_chunk = para
-                current_length += para_length + 2  # +2 for the newlines
-            
-            # If paragraph is too big for a single chunk, split it by sentences
-            elif para_length > max_length:
-                # First add the current chunk if it's not empty
-                if current_chunk:
-                    chunks.append(current_chunk)
-                    current_chunk = ""
-                    current_length = 0
+            # Only add non-empty chunks
+            if chunk.strip():
+                chunks.append(chunk)
                 
-                # Split paragraph into sentences
-                sentences = [s.strip() + "." for s in para.split('.') if s.strip()]
+            # Free memory after each chunk
+            if i % (stride * 10) == 0:
+                gc.collect()
                 
-                # Process sentences with overlap
-                i = 0
-                while i < len(sentences):
-                    current_chunk = ""
-                    current_length = 0
-                    
-                    # Add sentences until we reach max_length
-                    while i < len(sentences) and current_length + len(sentences[i]) <= max_length:
-                        if current_chunk:
-                            current_chunk += " " + sentences[i]
-                        else:
-                            current_chunk = sentences[i]
-                        current_length += len(sentences[i]) + 1  # +1 for the space
-                        i += 1
-                    
-                    if current_chunk:
-                        chunks.append(current_chunk)
-                    
-                    # Move back for overlap (but not below 0)
-                    overlap_sentences = max(1, int(overlap / 30))  # Approximate number of sentences for desired overlap
-                    i = max(0, i - overlap_sentences)
-            
-            # If paragraph doesn't fit, start a new chunk
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = para
-                current_length = para_length
-        
-        # Add the last chunk if it's not empty
-        if current_chunk:
-            chunks.append(current_chunk)
-        
-        # If no chunks were created (rare case), just use the original text
-        if not chunks and text.strip():
-            # Try to split into smaller pieces if text is very large
-            if len(text) > max_length:
-                # Simple character-based chunking with overlap as fallback
-                chunks = []
-                for i in range(0, len(text), max_length - overlap):
-                    chunks.append(text[i:i + max_length].strip())
-            else:
-                chunks = [text.strip()]
-        
         return chunks
         
     def _extract_text_from_pdf(self, pdf_path):
@@ -182,7 +167,12 @@ class VectorStore:
             with open(pdf_path, 'rb') as file:
                 reader = PyPDF2.PdfReader(file)
                 for page_num in range(len(reader.pages)):
-                    text += reader.pages[page_num].extract_text() + "\n\n"
+                    page_text = reader.pages[page_num].extract_text()
+                    if page_text:
+                        text += page_text + "\n\n"
+                    # Clear memory after each page
+                    if page_num % 10 == 0:
+                        gc.collect()
         except Exception as e:
             print(f"Error extracting text from PDF {pdf_path}: {e}")
             text = f"[Error processing document: {pdf_path}]"
@@ -193,29 +183,39 @@ class VectorStore:
         if not self.documents:
             return
             
-        # Generate embeddings for all documents
-        embeddings = self.model.encode(self.documents)
+        # Generate embeddings for documents in batches to save memory
+        batch_size = 64  # Process documents in larger batches
+        dimension = 384  # Fixed dimension for the MiniLM-L6-v2 model
         
-        # Normalize embeddings for cosine similarity
-        faiss.normalize_L2(embeddings)
+        # Create a new index - more efficient than updating
+        index = faiss.IndexFlatIP(dimension)
         
-        # Create FAISS index
-        dimension = embeddings.shape[1]
-        self.index = faiss.IndexFlatIP(dimension)  # Inner product for cosine similarity with normalized vectors
-        self.index.add(embeddings.astype(np.float32))
-        self.embeddings = embeddings
+        # Process in batches
+        for i in range(0, len(self.documents), batch_size):
+            end_idx = min(i + batch_size, len(self.documents))
+            batch = self.documents[i:end_idx]
+            
+            # Encode batch
+            batch_embeddings = self.model.encode(batch, show_progress_bar=False)
+            
+            # Normalize embeddings for cosine similarity
+            faiss.normalize_L2(batch_embeddings)
+            
+            # Add to index
+            index.add(batch_embeddings.astype(np.float32))
+            
+            # Force garbage collection
+            batch_embeddings = None
+            gc.collect()
+            
+        # Replace the old index
+        self.index = index
+        
+        # Force final garbage collection
+        gc.collect()
 
     def retrieve(self, query: str, top_n=5, threshold=0.2):
-        """Retrieve top_n relevant documents based on semantic similarity.
-        
-        Args:
-            query: The user query
-            top_n: Number of documents to retrieve
-            threshold: Minimum similarity score threshold
-        
-        Returns:
-            List of relevant document chunks with metadata
-        """
+        """Retrieve top_n relevant documents based on semantic similarity."""
         if not self.index or not self.documents:
             return ["No documents have been uploaded yet. Please upload some documents first."]
         
@@ -228,7 +228,7 @@ class VectorStore:
         # Normalize query embedding for cosine similarity
         faiss.normalize_L2(query_embedding)
         
-        # Search for similar documents - get more than needed for filtering
+        # Search for similar documents
         search_k = min(top_n * 3, len(self.documents))
         scores, indices = self.index.search(query_embedding.astype(np.float32), search_k)
         
@@ -238,6 +238,9 @@ class VectorStore:
         
         for i, idx in enumerate(indices[0]):
             if scores[0][i] > threshold:  # Apply similarity threshold
+                if idx < 0 or idx >= len(self.documents):  # Guard against out-of-bounds indices
+                    continue
+                    
                 doc = self.documents[idx]
                 source = self.document_sources[idx]
                 base_source = source.split(" (Chunk")[0]
@@ -260,11 +263,12 @@ class VectorStore:
                 if len(results) >= top_n:
                     break
         
+        # Clean up
+        query_embedding = None
+        gc.collect()
+        
         if not results:
             return ["No relevant information found for your query. Please try a different question."]
-        
-        # Sort by relevance score
-        results.sort(key=lambda x: x["score"], reverse=True)
         
         # Format results for the LLM
         formatted_results = []

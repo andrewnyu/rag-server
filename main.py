@@ -9,6 +9,7 @@ from llm import LLM
 from vectorstore import VectorStore
 from dotenv import load_dotenv, set_key
 import re
+import gc  # Add garbage collection
 
 # Load environment variables
 load_dotenv()
@@ -101,26 +102,66 @@ async def index_documents(files: list[UploadFile]):
     start_time = time.time()
     
     # Ensure uploads directory exists
-    os.makedirs("rag-server/uploads", exist_ok=True)
+    os.makedirs("uploads", exist_ok=True)
     
     uploaded_files = []
+    processing_times = []
+    
+    print(f"Starting to process {len(files)} documents...")
+    
     for file in files:
         try:
-            file_path = f"rag-server/uploads/{file.filename}"
+            doc_start_time = time.time()
+            print(f"Processing document: {file.filename}")
+            
+            file_path = f"uploads/{file.filename}"
+            
+            # Use chunked copying to avoid loading entire file into memory
             with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+                # Copy in chunks of 64KB instead of all at once
+                chunk_size = 64 * 1024  # 64KB chunks
+                while True:
+                    chunk = file.file.read(chunk_size)
+                    if not chunk:
+                        break
+                    buffer.write(chunk)
+                
+            print(f"File saved to {file_path}, adding to vector store...")
+            
             # Add document to vector store with source
             vector_store.add_document(file_path, source=file.filename)
+            
+            # Force garbage collection after processing each file
+            gc.collect()
+            
+            doc_process_time = time.time() - doc_start_time
+            processing_times.append((file.filename, doc_process_time))
+            
             uploaded_files.append(file.filename)
+            print(f"Successfully added document: {file.filename} in {doc_process_time:.2f} seconds")
+            
+        except Exception as e:
+            print(f"Error processing document {file.filename}: {str(e)}")
         finally:
             file.file.close()  # Explicitly close the file handle
+            # Force garbage collection
+            gc.collect()
 
     process_time = time.time() - start_time
+    
+    # Print summary
+    print(f"Indexing complete. Total time: {process_time:.2f} seconds")
+    for filename, doc_time in processing_times:
+        print(f"  - {filename}: {doc_time:.2f} seconds")
+    
+    # Final garbage collection
+    gc.collect()
     
     return JSONResponse(content={
         "message": f"Successfully indexed {len(uploaded_files)} files in vector store!",
         "files": uploaded_files,
-        "upload_time": f"{process_time:.2f} seconds"
+        "upload_time": f"{process_time:.2f} seconds",
+        "file_details": [{"filename": f, "process_time": f"{t:.2f} seconds"} for f, t in processing_times]
     })
 
 # Get list of documents
@@ -132,12 +173,14 @@ async def get_documents():
     # Add file system information for uploaded documents
     for doc in document_list:
         if doc["filename"] != "Default Example":
-            file_path = os.path.join("rag-server/uploads", doc["filename"])
+            file_path = os.path.join("uploads", doc["filename"])
             if os.path.exists(file_path):
                 # Update with actual file size
                 doc["size"] = f"{os.path.getsize(file_path) / 1024:.1f} KB"
                 # Add last modified time
                 doc["last_modified"] = time.ctime(os.path.getmtime(file_path))
+            else:
+                print(f"Warning: Document file not found: {file_path}")
     
     return JSONResponse(content={"documents": document_list})
 
@@ -145,15 +188,15 @@ async def get_documents():
 @app.get("/upload-queue/")
 async def get_upload_queue():
     # Ensure uploads directory exists
-    os.makedirs("rag-server/uploads", exist_ok=True)
+    os.makedirs("uploads", exist_ok=True)
     
     # Get all files in the uploads directory
     uploaded_files = []
     indexed_files = [doc["filename"] for doc in vector_store.get_document_list() 
                     if doc["filename"] != "Default Example"]
     
-    for filename in os.listdir("rag-server/uploads"):
-        file_path = os.path.join("rag-server/uploads", filename)
+    for filename in os.listdir("uploads"):
+        file_path = os.path.join("uploads", filename)
         if os.path.isfile(file_path):
             # Check if file is already indexed in vector store
             if filename not in indexed_files:
@@ -231,22 +274,32 @@ async def ask_question(query: str = Query(..., title="User query")):
 @app.post("/upload-only/")
 async def upload_files_only(files: list[UploadFile]):
     # Ensure uploads directory exists
-    os.makedirs("rag-server/uploads", exist_ok=True)
+    os.makedirs("uploads", exist_ok=True)
     
     uploaded_files = []
+    
     for file in files:
         try:
-            file_path = f"rag-server/uploads/{file.filename}"
+            file_path = f"uploads/{file.filename}"
             # Check if file already exists
             if os.path.exists(file_path):
                 continue
-                
+            
+            # Use chunked copying to avoid loading entire file into memory
             with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+                # Copy in chunks of 64KB instead of all at once
+                chunk_size = 64 * 1024  # 64KB chunks
+                while True:
+                    chunk = file.file.read(chunk_size)
+                    if not chunk:
+                        break
+                    buffer.write(chunk)
             
             uploaded_files.append(file.filename)
+            print(f"File uploaded to queue: {file.filename}")
         finally:
             file.file.close()  # Explicitly close the file handle
+            gc.collect()  # Force garbage collection
     
     return JSONResponse(content={
         "message": f"Successfully uploaded {len(uploaded_files)} files to queue",
@@ -256,7 +309,7 @@ async def upload_files_only(files: list[UploadFile]):
 # Remove a file from the upload queue
 @app.delete("/remove-from-queue/")
 async def remove_from_queue(filename: str):
-    file_path = f"rag-server/uploads/{filename}"
+    file_path = f"uploads/{filename}"
     
     # Check if file exists
     if not os.path.exists(file_path):
@@ -300,24 +353,55 @@ async def index_files(request: Request):
     start_time = time.time()
     
     indexed_files = []
+    processing_times = []
+    
+    print(f"Starting to process {len(filenames)} files from upload queue...")
+    
     for filename in filenames:
-        file_path = f"rag-server/uploads/{filename}"
-        
-        # Check if file exists
-        if not os.path.exists(file_path):
-            continue
-        
-        # Add document to vector store
         try:
+            doc_start_time = time.time()
+            print(f"Processing file: {filename}")
+            
+            file_path = f"uploads/{filename}"
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                print(f"File not found: {file_path}")
+                continue
+            
+            print(f"Adding file to vector store: {filename}")
+            
+            # Add document to vector store with memory optimization
+            # Process in smaller batches to prevent memory buildup
             vector_store.add_document(file_path, source=filename)
+            
+            # Force garbage collection after processing each file
+            gc.collect()
+            
+            doc_process_time = time.time() - doc_start_time
+            processing_times.append((filename, doc_process_time))
+            
             indexed_files.append(filename)
+            print(f"Successfully indexed file: {filename} in {doc_process_time:.2f} seconds")
+            
         except Exception as e:
             print(f"Error indexing {filename}: {str(e)}")
+            # Force garbage collection after an error
+            gc.collect()
     
     process_time = time.time() - start_time
+    
+    # Print summary
+    print(f"Indexing complete. Total time: {process_time:.2f} seconds")
+    for filename, doc_time in processing_times:
+        print(f"  - {filename}: {doc_time:.2f} seconds")
+    
+    # Final garbage collection
+    gc.collect()
     
     return JSONResponse(content={
         "message": f"Successfully indexed {len(indexed_files)} files in vector store!",
         "files": indexed_files,
-        "process_time": f"{process_time:.2f} seconds"
+        "process_time": f"{process_time:.2f} seconds",
+        "file_details": [{"filename": f, "process_time": f"{t:.2f} seconds"} for f, t in processing_times]
     })
