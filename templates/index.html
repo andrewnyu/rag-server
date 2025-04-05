@@ -299,7 +299,7 @@
             <h3>Upload Queue</h3>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <div>Files waiting to be indexed:</div>
-                <button onclick="updateUploadQueueUI()" style="width: auto; padding: 5px 10px;">Refresh</button>
+                <button onclick="loadUploadQueue()" style="width: auto; padding: 5px 10px;">Refresh</button>
             </div>
             <div id="uploadQueue" class="document-list">
                 <p>No files in queue</p>
@@ -360,6 +360,7 @@
             // Load documents list if we're on the documents tab
             if (document.getElementById("documents-tab").classList.contains("active")) {
                 loadDocuments();
+                loadUploadQueue();
             }
             
             // Load current LLM endpoint if we're on the admin tab
@@ -412,6 +413,7 @@
             // Load content based on the active tab
             if (tabName === "documents-tab") {
                 loadDocuments();
+                loadUploadQueue();
             } else if (tabName === "admin-tab") {
                 loadCurrentEndpoint();
             }
@@ -474,97 +476,143 @@
                 return;
             }
             
-            // Count how many new files are added
-            let newFilesCount = 0;
-            
-            // Add files to queue
+            // Create form to upload files to server
+            let formData = new FormData();
             for (let file of files) {
-                // Check if file already exists in queue
-                if (!uploadQueue.some(queuedFile => queuedFile.name === file.name)) {
-                    uploadQueue.push(file);
-                    newFilesCount++;
+                formData.append("files", file);
+            }
+            
+            // Show loading message
+            const queueElement = document.getElementById("uploadQueue");
+            queueElement.innerHTML = '<div style="text-align: center; padding: 20px;">Uploading files to queue...</div>';
+            
+            // Upload files to server (but don't index yet)
+            fetch("/upload-only/", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(result => {
+                // Show confirmation
+                if (result.files && result.files.length > 0) {
+                    alert(`Added ${result.files.length} file${result.files.length > 1 ? 's' : ''} to the upload queue. Use the 'Index Queued Files' button when ready to add them to the vector store.`);
+                } else {
+                    alert("No new files were added.");
                 }
-            }
-            
-            // Update UI
-            updateUploadQueueUI();
-            
-            // Clear the file input
-            fileInput.value = "";
-            
-            // Show confirmation
-            if (newFilesCount > 0) {
-                alert(`Added ${newFilesCount} file${newFilesCount > 1 ? 's' : ''} to the upload queue. Use the 'Index Queued Files' button when ready to add them to the vector store.`);
-            } else {
-                alert("No new files were added. All selected files were already in the queue.");
-            }
+                
+                // Refresh the queue
+                loadUploadQueue();
+                
+                // Clear the file input
+                fileInput.value = "";
+            })
+            .catch(error => {
+                console.error("Error uploading files:", error);
+                alert("Error uploading files. Please try again.");
+                loadUploadQueue();
+            });
         }
         
-        function updateUploadQueueUI() {
+        async function loadUploadQueue() {
             const queueElement = document.getElementById("uploadQueue");
             const indexButton = document.getElementById("indexButton");
             
-            if (uploadQueue.length === 0) {
-                queueElement.innerHTML = "<p>No files in queue</p>";
-                indexButton.disabled = true;
-                indexButton.style.backgroundColor = "#757575";
-                indexButton.textContent = "Index Queued Files (0)";
-            } else {
-                let html = '';
-                uploadQueue.forEach((file, index) => {
-                    html += `
-                        <div class="document-item">
-                            <div class="document-header">
-                                <div class="document-info">
-                                    <strong>${file.name}</strong>
-                                    <span class="document-type">${file.type || 'Unknown'}</span>
+            queueElement.innerHTML = '<div style="text-align: center; padding: 10px;">Loading queue...</div>';
+            
+            try {
+                const response = await fetch('/upload-queue/');
+                const result = await response.json();
+                
+                if (result.files && result.files.length > 0) {
+                    let html = '';
+                    result.files.forEach((file, index) => {
+                        html += `
+                            <div class="document-item">
+                                <div class="document-header">
+                                    <div class="document-info">
+                                        <strong>${file.filename}</strong>
+                                        <span class="document-type">${file.type || 'Unknown'}</span>
+                                    </div>
+                                    <div>${file.size}</div>
                                 </div>
-                                <div>${(file.size / 1024).toFixed(1)} KB</div>
+                                <div class="document-meta">
+                                    <span>Modified: ${file.last_modified}</span>
+                                    <button onclick="removeFileFromQueue('${file.filename}')" style="width: auto; padding: 2px 8px; background-color: #F44336; margin-top: 0;">Remove</button>
+                                </div>
                             </div>
-                            <div class="document-meta">
-                                <button onclick="removeFileFromQueue(${index})" style="width: auto; padding: 2px 8px; background-color: #F44336; margin-top: 0;">Remove</button>
-                            </div>
-                        </div>
-                    `;
-                });
-                queueElement.innerHTML = html;
-                indexButton.disabled = false;
-                indexButton.style.backgroundColor = "#1976D2";
-                indexButton.textContent = `Index Queued Files (${uploadQueue.length})`;
+                        `;
+                    });
+                    queueElement.innerHTML = html;
+                    indexButton.disabled = false;
+                    indexButton.style.backgroundColor = "#1976D2";
+                    indexButton.textContent = `Index Queued Files (${result.files.length})`;
+                } else {
+                    queueElement.innerHTML = "<p>No files in queue</p>";
+                    indexButton.disabled = true;
+                    indexButton.style.backgroundColor = "#757575";
+                    indexButton.textContent = "Index Queued Files (0)";
+                }
+            } catch (error) {
+                console.error("Error loading upload queue:", error);
+                queueElement.innerHTML = '<div style="padding: 15px; background: #ffebee; border-radius: 4px; color: #c62828; text-align: center;">Failed to load upload queue. Please try refreshing.</div>';
             }
         }
         
-        function removeFileFromQueue(index) {
-            uploadQueue.splice(index, 1);
-            updateUploadQueueUI();
-        }
-        
-        async function indexQueuedDocuments() {
-            if (uploadQueue.length === 0) {
-                alert("No files in queue to index!");
+        async function removeFileFromQueue(filename) {
+            if (!confirm(`Are you sure you want to remove "${filename}" from the queue?`)) {
                 return;
             }
             
-            let formData = new FormData();
-            for (let file of uploadQueue) {
-                formData.append("files", file);
-            }
-
             try {
-                let response = await fetch("/index-documents/", { method: "POST", body: formData });
-                let result = await response.json();
+                const response = await fetch(`/remove-from-queue/?filename=${encodeURIComponent(filename)}`, {
+                    method: "DELETE"
+                });
                 
-                // Clear queue after successful indexing
-                uploadQueue = [];
-                updateUploadQueueUI();
-                
-                alert(`${result.message} Index time: ${result.upload_time}`);
-                
-                // Reload document list
-                loadDocuments();
+                if (response.ok) {
+                    // Refresh the queue
+                    loadUploadQueue();
+                } else {
+                    alert("Error removing file from queue.");
+                }
             } catch (error) {
+                console.error("Error removing file:", error);
+                alert("Error removing file from queue.");
+            }
+        }
+        
+        async function indexQueuedDocuments() {
+            try {
+                const response = await fetch('/upload-queue/');
+                const result = await response.json();
+                
+                if (!result.files || result.files.length === 0) {
+                    alert("No files in queue to index!");
+                    return;
+                }
+                
+                // Get list of filenames to index
+                const filenames = result.files.map(file => file.filename);
+                
+                // Send request to index files
+                const indexResponse = await fetch("/index-files/", {
+                    method: "POST",
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ filenames: filenames })
+                });
+                
+                const indexResult = await indexResponse.json();
+                
+                alert(`${indexResult.message} Index time: ${indexResult.process_time}`);
+                
+                // Refresh both document lists
+                loadUploadQueue();
+                loadDocuments();
+                
+            } catch (error) {
+                console.error("Error indexing files:", error);
                 alert("Error indexing files. Please try again.");
-                console.error("Indexing error:", error);
             }
         }
 

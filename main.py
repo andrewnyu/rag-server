@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Query
+from fastapi import FastAPI, File, UploadFile, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -137,6 +137,42 @@ async def get_documents():
     
     return JSONResponse(content={"documents": document_list})
 
+# Get list of files in the upload queue (files in uploads folder not yet indexed)
+@app.get("/upload-queue/")
+async def get_upload_queue():
+    # Ensure uploads directory exists
+    os.makedirs("rag-server/uploads", exist_ok=True)
+    
+    # Get all files in the uploads directory
+    uploaded_files = []
+    indexed_files = [doc["filename"] for doc in vector_store.get_document_list() 
+                    if doc["filename"] != "Default Example"]
+    
+    for filename in os.listdir("rag-server/uploads"):
+        file_path = os.path.join("rag-server/uploads", filename)
+        if os.path.isfile(file_path):
+            # Check if file is already indexed in vector store
+            if filename not in indexed_files:
+                # Get file info
+                file_size = os.path.getsize(file_path)
+                last_modified = time.ctime(os.path.getmtime(file_path))
+                
+                # Determine file type from extension
+                file_type = "UNKNOWN"
+                if "." in filename:
+                    extension = filename.split(".")[-1].upper()
+                    if extension:
+                        file_type = extension
+                
+                uploaded_files.append({
+                    "filename": filename,
+                    "size": f"{file_size / 1024:.1f} KB",
+                    "last_modified": last_modified,
+                    "type": file_type
+                })
+    
+    return JSONResponse(content={"files": uploaded_files})
+
 # Ask a question
 @app.get("/ask/")
 async def ask_question(query: str = Query(..., title="User query")):
@@ -185,4 +221,99 @@ async def ask_question(query: str = Query(..., title="User query")):
             "llm_time": f"{llm_time:.2f} seconds",
             "total_time": f"{total_time:.2f} seconds"
         }
+    })
+
+# Upload files to the queue (without indexing)
+@app.post("/upload-only/")
+async def upload_files_only(files: list[UploadFile]):
+    # Ensure uploads directory exists
+    os.makedirs("rag-server/uploads", exist_ok=True)
+    
+    uploaded_files = []
+    for file in files:
+        try:
+            file_path = f"rag-server/uploads/{file.filename}"
+            # Check if file already exists
+            if os.path.exists(file_path):
+                continue
+                
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            uploaded_files.append(file.filename)
+        finally:
+            file.file.close()  # Explicitly close the file handle
+    
+    return JSONResponse(content={
+        "message": f"Successfully uploaded {len(uploaded_files)} files to queue",
+        "files": uploaded_files
+    })
+
+# Remove a file from the upload queue
+@app.delete("/remove-from-queue/")
+async def remove_from_queue(filename: str):
+    file_path = f"rag-server/uploads/{filename}"
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        return JSONResponse(
+            status_code=404,
+            content={"error": "File not found in upload queue"}
+        )
+    
+    # Check if it's already indexed
+    indexed_files = [doc["filename"] for doc in vector_store.get_document_list() 
+                   if doc["filename"] != "Default Example"]
+    
+    if filename in indexed_files:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Cannot remove file as it's already indexed in the vector store"}
+        )
+    
+    # Remove the file
+    try:
+        os.remove(file_path)
+        return JSONResponse(content={"message": f"File {filename} removed from queue"})
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to remove file: {str(e)}"}
+        )
+
+# Index files that are already in the upload folder
+@app.post("/index-files/")
+async def index_files(request: Request):
+    data = await request.json()
+    filenames = data.get("filenames", [])
+    
+    if not filenames:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No filenames provided for indexing"}
+        )
+    
+    start_time = time.time()
+    
+    indexed_files = []
+    for filename in filenames:
+        file_path = f"rag-server/uploads/{filename}"
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            continue
+        
+        # Add document to vector store
+        try:
+            vector_store.add_document(file_path, source=filename)
+            indexed_files.append(filename)
+        except Exception as e:
+            print(f"Error indexing {filename}: {str(e)}")
+    
+    process_time = time.time() - start_time
+    
+    return JSONResponse(content={
+        "message": f"Successfully indexed {len(indexed_files)} files in vector store!",
+        "files": indexed_files,
+        "process_time": f"{process_time:.2f} seconds"
     })
