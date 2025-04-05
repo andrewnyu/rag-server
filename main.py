@@ -220,6 +220,15 @@ async def get_upload_queue():
     
     return JSONResponse(content={"files": uploaded_files})
 
+
+#helper function to extract the answer from the LLM response
+def extract_answer(llm_response):
+    marker = "Answer:"
+    if marker in llm_response:
+        return llm_response.split(marker, 1)[-1].strip()
+    else:
+        return llm_response.strip()
+
 # Ask a question
 @app.get("/ask/")
 async def ask_question(query: str = Query(..., title="User query")):
@@ -228,12 +237,15 @@ async def ask_question(query: str = Query(..., title="User query")):
     
     # Retrieve relevant documents
     retrieval_start = time.time()
-    docs = vector_store.retrieve(query)
+
+    expanded_query = llm.expand_query(query)
+
+    docs = vector_store.retrieve(expanded_query)
     retrieval_time = time.time() - retrieval_start
     
     # Generate answer using the LLM
     llm_start = time.time()
-    answer = llm.generate(query, docs)
+    answer = llm.generate(expanded_query, docs)
 
     try:
         answer = str(answer).split("Question:")[1] #manually remove the context from the answer
@@ -258,6 +270,9 @@ async def ask_question(query: str = Query(..., title="User query")):
                     "source": source,
                     "content": content[:300] + "..." if len(content) > 300 else content
                 })
+
+    
+    clean_answer = extract_answer(answer)
     
     # Return comprehensive response with timing data
     return JSONResponse(content={
