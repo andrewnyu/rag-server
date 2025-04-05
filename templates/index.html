@@ -290,12 +290,24 @@
         </div>
         
         <div id="documents-tab" class="tab-content">
-            <!-- Upload Documents -->
-            <h3>Upload Documents</h3>
+            <!-- Upload Files -->
+            <h3>Upload Files</h3>
             <input type="file" id="fileInput" multiple>
-            <button onclick="uploadFiles()">Upload</button>
+            <button onclick="addFilesToUploadQueue()">Add to Queue</button>
             
-            <h3>Document List</h3>
+            <!-- Upload Queue -->
+            <h3>Upload Queue</h3>
+            <div id="uploadQueue" class="document-list">
+                <p>No files in queue</p>
+            </div>
+            <button onclick="indexQueuedDocuments()" id="indexButton" disabled style="margin-top: 10px; background-color: #757575;">Index Queued Files</button>
+            
+            <!-- Vector Store Documents -->
+            <h3>Vector Store Documents</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div>Documents currently indexed in the vector store:</div>
+                <button onclick="loadDocuments()" style="width: auto; padding: 5px 10px;">Refresh</button>
+            </div>
             <div id="documentList" class="document-list">
                 Loading documents...
             </div>
@@ -336,6 +348,9 @@
     </div>
 
     <script>
+        // Global variable to hold the upload queue
+        let uploadQueue = [];
+        
         // Initialize the application
         document.addEventListener("DOMContentLoaded", function() {
             // Load documents list if we're on the documents tab
@@ -412,53 +427,127 @@
                         const lastModified = doc.last_modified ? 
                             `<span>Modified: ${doc.last_modified}</span>` : '';
                         
+                        // Format chunks info with more detail
+                        const chunksInfo = doc.chunks > 1 ? 
+                            `<span class="document-chunks" title="Document is split into smaller chunks for better retrieval">
+                                ${doc.chunks} chunks
+                             </span>` : 
+                            `<span class="document-chunks" style="background-color: #E0E0E0;">Single chunk</span>`;
+                        
                         html += `
                             <div class="document-item">
                                 <div class="document-header">
                                     <div class="document-info">
                                         <strong>${doc.filename}</strong>
                                         <span class="document-type">${doc.type}</span>
-                                        ${doc.chunks > 1 ? `<span class="document-chunks">${doc.chunks} chunks</span>` : ''}
+                                        ${chunksInfo}
                                     </div>
                                     <div>${doc.size}</div>
                                 </div>
                                 <div class="document-meta">
                                     ${lastModified}
+                                    <span>Indexed in vector store</span>
                                 </div>
                             </div>
                         `;
                     }
                     documentList.innerHTML = html;
                 } else {
-                    documentList.innerHTML = '<p>No documents uploaded yet.</p>';
+                    documentList.innerHTML = '<div style="padding: 15px; background: #f5f5f5; border-radius: 4px; text-align: center;">No documents have been indexed in the vector store yet.<br>Add files to the queue and index them to see them here.</div>';
                 }
             } catch (error) {
                 console.error('Error loading documents:', error);
+                documentList.innerHTML = '<div style="padding: 15px; background: #ffebee; border-radius: 4px; color: #c62828; text-align: center;">Failed to load vector store documents. Please try refreshing.</div>';
             }
         }
         
-        async function uploadFiles() {
-            let files = document.getElementById("fileInput").files;
+        function addFilesToUploadQueue() {
+            let fileInput = document.getElementById("fileInput");
+            let files = fileInput.files;
+            
             if (files.length === 0) {
-                alert("Please select a file!");
+                alert("Please select at least one file!");
+                return;
+            }
+            
+            // Add files to queue
+            for (let file of files) {
+                // Check if file already exists in queue
+                if (!uploadQueue.some(queuedFile => queuedFile.name === file.name)) {
+                    uploadQueue.push(file);
+                }
+            }
+            
+            // Update UI
+            updateUploadQueueUI();
+            
+            // Clear the file input
+            fileInput.value = "";
+        }
+        
+        function updateUploadQueueUI() {
+            const queueElement = document.getElementById("uploadQueue");
+            const indexButton = document.getElementById("indexButton");
+            
+            if (uploadQueue.length === 0) {
+                queueElement.innerHTML = "<p>No files in queue</p>";
+                indexButton.disabled = true;
+                indexButton.style.backgroundColor = "#757575";
+            } else {
+                let html = '';
+                uploadQueue.forEach((file, index) => {
+                    html += `
+                        <div class="document-item">
+                            <div class="document-header">
+                                <div class="document-info">
+                                    <strong>${file.name}</strong>
+                                    <span class="document-type">${file.type || 'Unknown'}</span>
+                                </div>
+                                <div>${(file.size / 1024).toFixed(1)} KB</div>
+                            </div>
+                            <div class="document-meta">
+                                <button onclick="removeFileFromQueue(${index})" style="width: auto; padding: 2px 8px; background-color: #F44336; margin-top: 0;">Remove</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                queueElement.innerHTML = html;
+                indexButton.disabled = false;
+                indexButton.style.backgroundColor = "#1976D2";
+            }
+        }
+        
+        function removeFileFromQueue(index) {
+            uploadQueue.splice(index, 1);
+            updateUploadQueueUI();
+        }
+        
+        async function indexQueuedDocuments() {
+            if (uploadQueue.length === 0) {
+                alert("No files in queue to index!");
                 return;
             }
             
             let formData = new FormData();
-            for (let file of files) {
+            for (let file of uploadQueue) {
                 formData.append("files", file);
             }
 
             try {
-                let response = await fetch("/upload/", { method: "POST", body: formData });
+                let response = await fetch("/index-documents/", { method: "POST", body: formData });
                 let result = await response.json();
-                alert(`${result.message} Upload time: ${result.upload_time}`);
+                
+                // Clear queue after successful indexing
+                uploadQueue = [];
+                updateUploadQueueUI();
+                
+                alert(`${result.message} Index time: ${result.upload_time}`);
                 
                 // Reload document list
                 loadDocuments();
             } catch (error) {
-                alert("Error uploading files. Please try again.");
-                console.error("Upload error:", error);
+                alert("Error indexing files. Please try again.");
+                console.error("Indexing error:", error);
             }
         }
 

@@ -91,9 +91,9 @@ async def get_llm_endpoint():
         "endpoint": llm.endpoint_url
     })
 
-# Upload documents
-@app.post("/upload/")
-async def upload_file(files: list[UploadFile]):
+# Add documents to vector store
+@app.post("/index-documents/")
+async def index_documents(files: list[UploadFile]):
     start_time = time.time()
     
     # Ensure uploads directory exists
@@ -101,20 +101,22 @@ async def upload_file(files: list[UploadFile]):
     
     uploaded_files = []
     for file in files:
-        file_path = f"rag-server/uploads/{file.filename}"
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Add document to vector store with source
-        vector_store.add_document(file_path, source=file.filename)
-        uploaded_files.append(file.filename)
+        try:
+            file_path = f"rag-server/uploads/{file.filename}"
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            # Add document to vector store with source
+            vector_store.add_document(file_path, source=file.filename)
+            uploaded_files.append(file.filename)
+        finally:
+            file.file.close()  # Explicitly close the file handle
 
-    upload_time = time.time() - start_time
+    process_time = time.time() - start_time
     
     return JSONResponse(content={
-        "message": "Files uploaded successfully!",
+        "message": f"Successfully indexed {len(uploaded_files)} files in vector store!",
         "files": uploaded_files,
-        "upload_time": f"{upload_time:.2f} seconds"
+        "upload_time": f"{process_time:.2f} seconds"
     })
 
 # Get list of documents
