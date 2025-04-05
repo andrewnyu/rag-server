@@ -4,38 +4,46 @@ class LLM:
     def __init__(self, endpoint_url=None):
         self.endpoint_url = endpoint_url
 
+    def expand_query(self, query):
+        expansion_prompt = f"""You are an expert Home Depot product advisor. Expand the following customer query with relevant synonyms and key technical details for better retrieval:
+
+Original Query: {query}
+
+Expanded Query:"""
+
+        try:
+            response = requests.get(self.endpoint_url + expansion_prompt)
+            if response.status_code == 200:
+                return response.json().get("response", query)
+            else:
+                return query
+        except Exception:
+            return query
+
     def generate(self, query, docs):
-        """ Send request to remote LLM inference API with improved context handling """
-        # Check if endpoint is set
         if not self.endpoint_url:
             return "Error: No LLM endpoint set. Please configure an endpoint URL."
-            
-        # Format context with better separation
-        if docs and isinstance(docs, list):
-            # The documents are already formatted by the vectorstore
-            context = "\n\n---\n\n".join(docs)
-        else:
-            context = "No relevant information found."
-            
-        # Enhanced prompt format with better instructions
-        prompt = f"""Answer the following question based ONLY on the provided context. If the context doesn't contain the information needed to answer the question, say "I don't have enough information to answer this question" instead of making up an answer.
+
+        expanded_query = self.expand_query(query)
+
+        context = "\n\n---\n\n".join(docs) if docs else "No relevant information found."
+
+        prompt = f"""You are an expert Home Depot engineer providing product recommendations based ONLY on the context provided below. If information is missing, respond with "I don't have enough information to answer this question."
 
 Context:
 {context}
 
-Question: {query}
+Customer Query: {expanded_query}
 
 Instructions:
-1. Use ONLY the information from the provided context
-2. If the answer is not in the context, admit you don't know
-3. Provide a concise and accurate answer
-4. Cite the relevant document numbers when possible (e.g., "According to Document 1...")
+1. Recommend the best product(s) from the provided context.
+2. Briefly explain the choice clearly based on technical suitability.
+3. Cite the relevant document numbers when applicable (e.g., "According to Document 1...").
 
 Answer:"""
-        
+
         try:
             response = requests.get(self.endpoint_url + prompt)
-
             if response.status_code == 200:
                 return response.json().get("response", "No response received")
             else:
