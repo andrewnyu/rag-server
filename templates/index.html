@@ -297,10 +297,14 @@
             
             <!-- Upload Queue -->
             <h3>Upload Queue</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div>Files waiting to be indexed:</div>
+                <button onclick="updateUploadQueueUI()" style="width: auto; padding: 5px 10px;">Refresh</button>
+            </div>
             <div id="uploadQueue" class="document-list">
                 <p>No files in queue</p>
             </div>
-            <button onclick="indexQueuedDocuments()" id="indexButton" disabled style="margin-top: 10px; background-color: #757575;">Index Queued Files</button>
+            <button onclick="indexQueuedDocuments()" id="indexButton" disabled style="margin-top: 10px; background-color: #757575;">Index Queued Files (0)</button>
             
             <!-- Vector Store Documents -->
             <h3>Vector Store Documents</h3>
@@ -470,11 +474,15 @@
                 return;
             }
             
+            // Count how many new files are added
+            let newFilesCount = 0;
+            
             // Add files to queue
             for (let file of files) {
                 // Check if file already exists in queue
                 if (!uploadQueue.some(queuedFile => queuedFile.name === file.name)) {
                     uploadQueue.push(file);
+                    newFilesCount++;
                 }
             }
             
@@ -483,6 +491,13 @@
             
             // Clear the file input
             fileInput.value = "";
+            
+            // Show confirmation
+            if (newFilesCount > 0) {
+                alert(`Added ${newFilesCount} file${newFilesCount > 1 ? 's' : ''} to the upload queue. Use the 'Index Queued Files' button when ready to add them to the vector store.`);
+            } else {
+                alert("No new files were added. All selected files were already in the queue.");
+            }
         }
         
         function updateUploadQueueUI() {
@@ -493,6 +508,7 @@
                 queueElement.innerHTML = "<p>No files in queue</p>";
                 indexButton.disabled = true;
                 indexButton.style.backgroundColor = "#757575";
+                indexButton.textContent = "Index Queued Files (0)";
             } else {
                 let html = '';
                 uploadQueue.forEach((file, index) => {
@@ -514,6 +530,7 @@
                 queueElement.innerHTML = html;
                 indexButton.disabled = false;
                 indexButton.style.backgroundColor = "#1976D2";
+                indexButton.textContent = `Index Queued Files (${uploadQueue.length})`;
             }
         }
         
